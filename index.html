@@ -34,8 +34,9 @@ h1{font-size:19px;font-weight:700;}
 .icobox{border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px;display:block;}
 .field{margin-bottom:12px;}
-.input{width:100%;background:#0c1320;border:1px solid var(--border);border-radius:12px;padding:12px 14px;color:var(--text);outline:none;}
+.input{width:100%;min-width:0;background:#0c1320;border:1px solid var(--border);border-radius:12px;padding:12px 14px;color:var(--text);outline:none;box-sizing:border-box;}
 .input:focus{border-color:var(--cyan);}
+select.input{appearance:none;-webkit-appearance:none;padding-right:38px;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");background-repeat:no-repeat;background-position:right 12px center;}
 .btn{border-radius:12px;padding:13px;font-weight:700;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px;transition:.1s;}
 .btn:active{transform:scale(.98);}
 .btn-primary{background:var(--cyan);color:#06222b;}
@@ -244,9 +245,9 @@ function driveToken(clientId,cb,silent){
   }catch(e){cb(null,e.message);}
  });
 }
-function driveUploadBlob(token,blob,name,cb){
+function driveUploadBlob(token,blob,name,parentId,cb){
  try{
-  var meta={name:name,mimeType:'image/jpeg'};
+  var meta={name:name,mimeType:'image/jpeg'}; if(parentId)meta.parents=[parentId];
   var fd=new FormData();
   fd.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
   fd.append('file',blob);
@@ -255,11 +256,46 @@ function driveUploadBlob(token,blob,name,cb){
   }).then(function(r){return r.json();}).then(function(j){cb(j);}).catch(function(e){cb(null,e.message);});
  }catch(e){cb(null,e.message);}
 }
+/* Dossier "boreas" dédié (créé par l'app, accessible via scope drive.file) */
+function driveEnsureFolder(token,cb){
+ var q="name='boreas' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+ fetch('https://www.googleapis.com/drive/v3/files?spaces=drive&fields='+encodeURIComponent('files(id)')+'&q='+encodeURIComponent(q),{headers:{Authorization:'Bearer '+token}})
+  .then(function(r){return r.json();}).then(function(j){
+   if(j&&j.files&&j.files[0])return cb(j.files[0].id);
+   fetch('https://www.googleapis.com/drive/v3/files?fields=id',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({name:'boreas',mimeType:'application/vnd.google-apps.folder'})})
+    .then(function(r){return r.json();}).then(function(j2){cb(j2&&j2.id);}).catch(function(){cb(null);});
+  }).catch(function(){cb(null);});
+}
 var pendingBlob=null;                     // ticket capturé mais frais pas encore enregistré
 var currentReceipt=null;                  // id du ticket ouvert dans la modale
 
 /* ---- Synchronisation complète des données (newest-wins) ---- */
-function backupObj(){ return {updatedAt:state.updatedAt,chantiers:state.chantiers,frais:state.frais,devis:state.devis,settings:{tauxProvision:state.settings.tauxProvision,deduc:state.settings.deduc}}; }
+function backupObj(map){ return {updatedAt:state.updatedAt,chantiers:state.chantiers,frais:state.frais,devis:state.devis,settings:{tauxProvision:state.settings.tauxProvision,deduc:state.settings.deduc},receipts:map||{}}; }
+/* Construit la table fraisId -> idDriveDuTicket depuis IndexedDB */
+function gatherReceipts(cb){
+ idbKeys(function(keys){
+  var todo=keys.slice(), map={};
+  (function next(){ if(!todo.length)return cb(map); var id=todo.shift(); idbGet(id,function(rec){ if(rec&&rec.drive&&rec.drive.id)map[id]=rec.drive.id; next(); }); })();
+ });
+}
+/* Télécharge depuis Drive les tickets absents localement (restauration nouvel appareil) */
+function driveDownloadFile(token,fileId,cb){
+ fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',{headers:{Authorization:'Bearer '+token}})
+  .then(function(r){return r.blob();}).then(function(b){cb(b);}).catch(function(){cb(null);});
+}
+function downloadMissingPhotos(token,map,cb){
+ if(!map)return cb(0);
+ var ids=Object.keys(map), n=0;
+ (function next(){
+  if(!ids.length)return cb(n);
+  var fid=ids.shift(), drvId=map[fid];
+  if(receiptIds[fid]||!drvId)return next();
+  driveDownloadFile(token,drvId,function(blob){
+   if(!blob)return next();
+   idbPut({id:fid,blob:blob,drive:{id:drvId,link:''}},function(ok){ if(ok){receiptIds[fid]=true;receiptDrive[fid]={id:drvId,link:''};n++;} next(); });
+  });
+ })();
+}
 function applyRemote(r){
  if(r.chantiers)state.chantiers=r.chantiers;
  if(r.frais)state.frais=r.frais;
@@ -268,25 +304,49 @@ function applyRemote(r){
  state.updatedAt=r.updatedAt||Date.now();
  persist(true);
 }
-function driveFindBackup(token,cb){
- fetch('https://www.googleapis.com/drive/v3/files?spaces=drive&fields='+encodeURIComponent('files(id,modifiedTime)')+'&q='+encodeURIComponent("name='boreas-backup.json' and trashed=false"),{headers:{Authorization:'Bearer '+token}})
-  .then(function(r){return r.json();}).then(function(j){ cb(j&&j.files&&j.files[0]?j.files[0].id:null); }).catch(function(){cb(null);});
+function driveFindBackup(token,folderId,cb){
+ fetch('https://www.googleapis.com/drive/v3/files?spaces=drive&fields='+encodeURIComponent('files(id,parents)')+'&q='+encodeURIComponent("name='boreas-backup.json' and trashed=false"),{headers:{Authorization:'Bearer '+token}})
+  .then(function(r){return r.json();}).then(function(j){
+   var f=j&&j.files&&j.files[0]; if(!f)return cb(null);
+   if(f.parents&&f.parents.indexOf(folderId)>-1)return cb(f.id);
+   var rem=(f.parents||[]).join(',');           // sauvegarde héritée à la racine : la déplacer dans /boreas
+   fetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?addParents='+folderId+(rem?'&removeParents='+rem:'')+'&fields=id',{method:'PATCH',headers:{Authorization:'Bearer '+token}})
+    .then(function(){cb(f.id);}).catch(function(){cb(f.id);});
+  }).catch(function(){cb(null);});
 }
 function driveDownloadBackup(token,id,cb){
  fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media',{headers:{Authorization:'Bearer '+token}})
   .then(function(r){return r.text();}).then(function(t){ try{cb(JSON.parse(t));}catch(e){cb(false);} }).catch(function(){cb(false);});
 }
-function driveCreateBackup(token,cb){
+function driveCreateBackup(token,folderId,payload,cb){
  try{
+  var meta={name:'boreas-backup.json',mimeType:'application/json'}; if(folderId)meta.parents=[folderId];
   var fd=new FormData();
-  fd.append('metadata',new Blob([JSON.stringify({name:'boreas-backup.json',mimeType:'application/json'})],{type:'application/json'}));
-  fd.append('file',new Blob([JSON.stringify(backupObj())],{type:'application/json'}));
+  fd.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
+  fd.append('file',new Blob([JSON.stringify(payload)],{type:'application/json'}));
   fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:'Bearer '+token},body:fd})
    .then(function(r){return r.json();}).then(function(j){cb(j&&j.id);}).catch(function(){cb(null);});
  }catch(e){cb(null);}
 }
-function driveUpdateBackup(token,id,cb){
- fetch('https://www.googleapis.com/upload/drive/v3/files/'+id+'?uploadType=media',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(backupObj())})
+/* Pousse vers /boreas les tickets pas encore sauvegardés sur Drive */
+function drivePushPhotos(token,folderId,cb){
+ idbKeys(function(keys){
+  var todo=keys.slice(), n=0;
+  (function next(){
+   if(!todo.length)return cb(n);
+   var id=todo.shift();
+   idbGet(id,function(rec){
+    if(!rec||!rec.blob||(rec.drive&&rec.drive.id))return next();
+    driveUploadBlob(token,rec.blob,'ticket-'+id+'.jpg',folderId,function(j){
+     if(j&&j.id){ rec.drive={id:j.id,link:j.webViewLink||''}; idbPut(rec,function(){ receiptDrive[id]=rec.drive; n++; next(); }); }
+     else next();
+    });
+   });
+  })();
+ });
+}
+function driveUpdateBackup(token,id,payload,cb){
+ fetch('https://www.googleapis.com/upload/drive/v3/files/'+id+'?uploadType=media',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload)})
   .then(function(r){return r.json();}).then(function(){cb(true);}).catch(function(){cb(false);});
 }
 function driveSync(silent,cb){
@@ -294,15 +354,42 @@ function driveSync(silent,cb){
  if(!navigator.onLine)return cb('offline');
  driveToken(cid,function(token,err){
   if(!token)return cb(silent?'needauth':(err||'auth'));
-  driveFindBackup(token,function(fid){
-   if(!fid){ driveCreateBackup(token,function(id){ if(id){state.settings.driveBackupId=id;persist(true);cb(null,'uploaded');} else cb('create'); }); return; }
-   state.settings.driveBackupId=fid;
-   driveDownloadBackup(token,fid,function(remote){
-    if(remote===false)return cb('download');
-    var lt=state.updatedAt||0, rt=(remote&&remote.updatedAt)||0;
-    if(rt>lt){ applyRemote(remote); cb(null,'pulled'); }
-    else if(lt>rt){ driveUpdateBackup(token,fid,function(ok){ cb(ok?null:'update', ok?'pushed':undefined); }); }
-    else cb(null,'insync');
+  driveEnsureFolder(token,function(folderId){
+   if(!folderId)return cb('folder');
+   state.settings.driveFolderId=folderId; persist(true);
+   /* Envoie les photos locales manquantes puis (ré)écrit le backup avec la table receipts */
+   var pushAndWrite=function(fid,action){
+    drivePushPhotos(token,folderId,function(nUp){
+     gatherReceipts(function(map){
+      var payload=backupObj(map);
+      if(fid){ driveUpdateBackup(token,fid,payload,function(ok){ if(!ok)return cb('update'); state.settings.driveBackupId=fid; persist(true); cb(null,action,nUp,0); }); }
+      else { driveCreateBackup(token,folderId,payload,function(id){ if(!id)return cb('create'); state.settings.driveBackupId=id; persist(true); cb(null,action,nUp,0); }); }
+     });
+    });
+   };
+   driveFindBackup(token,folderId,function(fid){
+    if(!fid){ pushAndWrite(null,'uploaded'); return; }
+    state.settings.driveBackupId=fid;
+    driveDownloadBackup(token,fid,function(remote){
+     if(remote===false)return cb('download');
+     var lt=state.updatedAt||0, rt=(remote&&remote.updatedAt)||0;
+     if(rt>lt){
+       applyRemote(remote);
+       downloadMissingPhotos(token,remote.receipts,function(nDown){
+        drivePushPhotos(token,folderId,function(nUp){        // photos locales éventuelles, sans écraser les données distantes
+         if(nUp>0){ gatherReceipts(function(map){ driveUpdateBackup(token,fid,backupObj(map),function(){ cb(null,'pulled',nUp,nDown); }); }); }
+         else cb(null,'pulled',0,nDown);
+        });
+       });
+     }
+     else if(lt>rt){ pushAndWrite(fid,'pushed'); }
+     else { // à jour : pousser d'éventuelles photos locales non sauvegardées
+       drivePushPhotos(token,folderId,function(nUp){
+        if(nUp>0){ gatherReceipts(function(map){ driveUpdateBackup(token,fid,backupObj(map),function(){ cb(null,'insync',nUp,0); }); }); }
+        else cb(null,'insync',0,0);
+       });
+     }
+    });
    });
   });
  },silent);
@@ -471,11 +558,12 @@ function viewFrais(){
  var form=ui.fraisForm?(
   '<div class="card pad mb3 pop">'
   +'<div class="field"><span class="label">Libellé</span><input class="input" id="f_lib" placeholder="Ex: Détecteur de fuite"/></div>'
-  +'<div class="row"><div class="field" style="flex:1"><span class="label">Montant (€)</span><input class="input" id="f_montant" type="number" inputmode="decimal" placeholder="0"/></div>'
-  +'<div class="field" style="flex:1"><span class="label">Date</span><input class="input" id="f_date" type="date" value="'+todayISO()+'"/></div></div>'
-  +'<div class="field"><span class="label">Catégorie</span><div class="grid2" id="f_catwrap">'
-  +CATEGORIES.map(function(c){var pd=deducOf(c.key);return '<button class="selbtn'+(ui.fCat===c.key?' active':'')+'" style="justify-content:flex-start" onclick="B.setFCat(\''+c.key.replace(/'/g,"\\'")+'\')"><span class="icobox" style="width:24px;height:24px;background:'+c.color+'22;color:'+c.color+'">'+ico(c.icon,14)+'</span><span class="trunc" style="flex:1;text-align:left">'+c.key+'</span>'+(pd<100?'<span style="font-size:10px;font-weight:700;color:'+c.color+'">'+pd+'%</span>':'')+'</button>';}).join('')
-  +'</div></div>'
+  +'<div class="row"><div class="field" style="flex:1;min-width:0"><span class="label">Montant (€)</span><input class="input" id="f_montant" type="number" inputmode="decimal" placeholder="0"/></div>'
+  +'<div class="field" style="flex:1;min-width:0"><span class="label">Date</span><input class="input" id="f_date" type="date" value="'+todayISO()+'"/></div></div>'
+  +'<div class="field"><span class="label">Catégorie</span>'
+  +'<select class="input" id="f_cat" onchange="B.setFCat(this.value)">'
+  +CATEGORIES.map(function(c){var pd=deducOf(c.key);return '<option value="'+esc(c.key)+'"'+(ui.fCat===c.key?' selected':'')+'>'+esc(c.key)+(pd<100?' — '+pd+'% déduct.':'')+'</option>';}).join('')
+  +'</select></div>'
   +'<div class="field"><span class="label">Justificatif (ticket)</span>'
   +'<input type="file" id="capInput" accept="image/*" capture="environment" style="display:none" onchange="B.onPhoto(this)"/>'
   +'<input type="file" id="upInput" accept="image/*" style="display:none" onchange="B.onPhoto(this)"/>'
@@ -557,7 +645,7 @@ var B={
  toggleForm:function(w){ if(w==='chantier'){ui.chantierForm=!ui.chantierForm;} else {ui.fraisForm=!ui.fraisForm; pendingBlob=null;} render(); },
  setFilter:function(f){ ui.filter=f; render(); },
  setCStatut:function(s){ ui.cStatut=s; var b=$('c_stat').children; b[0].className='selbtn'+(s==='en_cours'?' active':''); b[1].className='selbtn'+(s==='paye'?' active':''); },
- setFCat:function(k){ ui.fCat=k; var w=$('f_catwrap').children; for(var i=0;i<w.length;i++){w[i].className='selbtn'+(CATEGORIES[i].key===k?' active':'');} },
+ setFCat:function(k){ ui.fCat=k; },
  addChantier:function(){
    var client=$('c_client').value.trim(), montant=Number($('c_montant').value);
    if(!client||!montant){alert('Nom du client et montant requis.');return;}
@@ -622,9 +710,11 @@ var B={
      driveToken(cid,function(token,err){
        if(!token){ alert('Google Drive : '+(err||'échec')); B.refreshModalDrive(id); return; }
        if(el)el.innerHTML='<div class="btn btn-ghost" style="flex:1">Envoi en cours…</div>';
-       driveUploadBlob(token,rec.blob,'ticket-'+id+'.jpg',function(j,err2){
-         if(j&&j.id){ rec.drive={id:j.id,link:j.webViewLink||''}; idbPut(rec,function(){ receiptDrive[id]=rec.drive; B.refreshModalDrive(id); }); }
-         else { alert('Envoi Drive échoué : '+(err2||'réponse invalide')); B.refreshModalDrive(id); }
+       driveEnsureFolder(token,function(folderId){
+         driveUploadBlob(token,rec.blob,'ticket-'+id+'.jpg',folderId,function(j,err2){
+           if(j&&j.id){ rec.drive={id:j.id,link:j.webViewLink||''}; idbPut(rec,function(){ receiptDrive[id]=rec.drive; B.refreshModalDrive(id); }); }
+           else { alert('Envoi Drive échoué : '+(err2||'réponse invalide')); B.refreshModalDrive(id); }
+         });
        });
      });
    });
@@ -635,14 +725,16 @@ var B={
    if(!effectiveClientId()){ if(!silent)toast('Aucun ID client OAuth configuré.'); return; }
    if(!navigator.onLine){ if(!silent)toast('Hors-ligne — synchronisation impossible.'); return; }
    if(!silent)toast('Synchronisation…');
-   driveSync(silent,function(err,action){
-     if(err){ if(err==='needauth'){ if(!silent)toast('Appuie sur « Synchroniser » pour autoriser Google.'); return; }
+   driveSync(silent,function(err,action,nUp,nDown){
+     if(err){ if(err==='needauth'){ if(!silent)toast('Appuie sur « Connecter mon Drive » pour autoriser Google.'); return; }
        if(!silent)toast('Synchro : '+err); return; }
      state.settings.lastSync=Date.now(); persist(true);
      var msg=action==='pulled'?'Données mises à jour depuis Drive.':action==='pushed'?'Sauvegarde envoyée sur Drive.':action==='uploaded'?'Première sauvegarde créée sur Drive.':'Déjà à jour.';
+     var ex=[]; if(nUp>0)ex.push(nUp+' photo'+(nUp>1?'s':'')+' envoyée'+(nUp>1?'s':'')); if(nDown>0)ex.push(nDown+' photo'+(nDown>1?'s':'')+' restaurée'+(nDown>1?'s':''));
+     if(ex.length)msg+=' '+ex.join(', ')+'.';
      toast(msg);
      var s=$('syncStatus'); if(s)s.textContent=syncStatusText();
-     if(action==='pulled')render();
+     if(action==='pulled'||nDown>0)render();
    });
  },
  /* --- devis --- */
