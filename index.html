@@ -131,6 +131,7 @@ function ico(name,size,color,stroke){
 
 /* ============ Constants & seed ============ */
 var TVA_LIMIT=25000;
+var DRIVE_CLIENT_ID='376867033640-00ni2l2s06kgol1hjrfs75s5fjert4v5.apps.googleusercontent.com'; // ID client OAuth (public, restreint à l'origine autorisée)
 var CATEGORIES=[
  {key:'Matériel revendu',icon:'box',color:'#22d3ee',deduc:100},
  {key:'Outillage & Équipement',icon:'wrench',color:'#a78bfa',deduc:100},
@@ -181,6 +182,7 @@ CATEGORIES.forEach(function(c){ if(state.settings.deduc[c.key]==null) state.sett
 function deducOf(k){ var v=(state.settings.deduc||{})[k]; if(v==null)v=catMeta(k).deduc; v=Number(v); if(isNaN(v))v=100; return Math.max(0,Math.min(100,v)); }
 function persist(keepTs){ if(!keepTs) state.updatedAt=Date.now(); try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){} }
 if(!state.updatedAt){ state.updatedAt=Date.now(); persist(true); }
+function effectiveClientId(){ return (state.settings.driveClientId||'').trim() || DRIVE_CLIENT_ID; }
 
 /* ============ Justificatifs : IndexedDB ============ */
 var DB=null, DBERR=false;
@@ -288,7 +290,7 @@ function driveUpdateBackup(token,id,cb){
   .then(function(r){return r.json();}).then(function(){cb(true);}).catch(function(){cb(false);});
 }
 function driveSync(silent,cb){
- var cid=state.settings.driveClientId; if(!cid)return cb('noconfig');
+ var cid=effectiveClientId(); if(!cid)return cb('noconfig');
  if(!navigator.onLine)return cb('offline');
  driveToken(cid,function(token,err){
   if(!token)return cb(silent?'needauth':(err||'auth'));
@@ -308,7 +310,7 @@ function driveSync(silent,cb){
 function syncStatusText(){ var t=state.settings.lastSync; return t?('Dernière synchro : '+new Date(t).toLocaleString('fr-BE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})):'Jamais synchronisé sur cet appareil.'; }
 function toast(msg){ var el=$('toast'); if(!el)return; el.innerHTML='<div class="t">'+esc(msg)+'</div>'; var t=el.firstChild; requestAnimationFrame(function(){t.classList.add('show');}); setTimeout(function(){if(t)t.classList.remove('show');},2800); }
 
-var ui={tab:'dashboard',chantierForm:false,fraisForm:false,settings:false,filter:'tous',cStatut:'en_cours',fCat:CATEGORIES[0].key};
+var ui={tab:'dashboard',chantierForm:false,fraisForm:false,settings:false,driveAdv:false,filter:'tous',cStatut:'en_cours',fCat:CATEGORIES[0].key};
 
 /* ============ Finance ============ */
 function finance(){
@@ -371,11 +373,14 @@ function viewDashboard(){
   +'<button class="btn btn-ghost" style="flex:1" onclick="B.exportCSV()">'+ico('download',18,'var(--cyan)')+'CSV</button>'
   +'<button class="btn btn-ghost" style="flex:1" onclick="B.emailRecap()">'+ico('send',18,'var(--cyan)')+'Email récap</button></div>'
   +'<div style="border-top:1px solid var(--border);margin:16px 0 14px"></div>'
-  +'<div style="font-weight:600;margin-bottom:4px">Sauvegarde Google Drive (optionnel)</div>'
-  +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Colle ton ID client OAuth. La synchro (toutes les données) se fait au lancement et à la demande. Fonctionne uniquement en ligne.</p>'
-  +'<input class="input" type="text" value="'+esc(state.settings.driveClientId||'')+'" placeholder="xxxxx.apps.googleusercontent.com" oninput="B.setDriveClientId(this.value)"/>'
-  +'<button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="B.syncNow(false)">'+ico('cloud',18,'var(--cyan)')+'Synchroniser maintenant</button>'
+  +'<div style="font-weight:600;margin-bottom:4px">Sauvegarde Google Drive</div>'
+  +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Synchronise toutes tes données (au lancement et à la demande). Fonctionne uniquement en ligne.</p>'
+  +'<button class="btn btn-primary" style="width:100%" onclick="B.syncNow(false)">'+ico('cloud',18)+(state.settings.lastSync?'Synchroniser mon Drive':'Connecter mon Drive')+'</button>'
   +'<div class="muted2" style="font-size:11px;margin-top:8px;text-align:center" id="syncStatus">'+syncStatusText()+'</div>'
+  +'<div style="text-align:center;margin-top:10px"><button class="muted2" style="font-size:11px;text-decoration:underline" onclick="B.toggleDriveAdv()">Options avancées</button></div>'
+  +(ui.driveAdv?('<div style="margin-top:8px"><span class="label">ID client OAuth personnalisé</span>'
+    +'<input class="input" type="text" value="'+esc(state.settings.driveClientId||'')+'" placeholder="Laisser vide = ID intégré" oninput="B.setDriveClientId(this.value)"/>'
+    +'<p class="muted2" style="font-size:10px;margin-top:6px">Par défaut, l\'app utilise l\'ID intégré. N\'en renseigne un autre que pour connecter un projet Google différent.</p></div>'):'')
   +'</div>'):'';
  return ''
  +'<div class="between mb2"><div class="row" style="align-items:center;gap:8px">'
@@ -608,8 +613,8 @@ var B={
  closeModal:function(){ currentReceipt=null; var m=$('modal'); m.className=''; m.innerHTML=''; },
  delReceipt:function(id){ idbDel(id,function(){ delete receiptIds[id]; delete receiptDrive[id]; B.closeModal(); render(); }); },
  driveUpload:function(id){
-   var cid=(state.settings.driveClientId||'').trim();
-   if(!cid){ alert('Ajoute d\'abord ton ID client OAuth Google dans les réglages (Dashboard → engrenage).'); return; }
+   var cid=effectiveClientId();
+   if(!cid){ alert('Aucun ID client OAuth configuré.'); return; }
    if(!navigator.onLine){ alert('Aucune connexion réseau — réessaie une fois en ligne.'); return; }
    var el=$('modalDrive'); if(el)el.innerHTML='<div class="btn btn-ghost" style="flex:1">Connexion à Google…</div>';
    idbGet(id,function(rec){
@@ -625,8 +630,9 @@ var B={
    });
  },
  setDriveClientId:function(v){ state.settings.driveClientId=(v||'').trim(); driveTok=null; driveTokExp=0; persist(); },
+ toggleDriveAdv:function(){ ui.driveAdv=!ui.driveAdv; render(); },
  syncNow:function(silent){
-   if(!state.settings.driveClientId){ if(!silent)toast('Ajoute d\'abord ton ID client OAuth Google.'); return; }
+   if(!effectiveClientId()){ if(!silent)toast('Aucun ID client OAuth configuré.'); return; }
    if(!navigator.onLine){ if(!silent)toast('Hors-ligne — synchronisation impossible.'); return; }
    if(!silent)toast('Synchronisation…');
    driveSync(silent,function(err,action){
@@ -740,7 +746,7 @@ var B={
 window.B=B;
 render();
 /* Auto-synchronisation au lancement (silencieuse ; retombe sur le bouton manuel si l'autorisation est requise) */
-if(state.settings.driveClientId){ setTimeout(function(){ B.syncNow(true); }, 700); }
+if(effectiveClientId()){ setTimeout(function(){ B.syncNow(true); }, 700); }
 </script>
 </body>
 </html>
