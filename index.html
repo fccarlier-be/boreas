@@ -43,7 +43,7 @@ h1{font-size:19px;font-weight:700;}
 .chip{font-size:10px;padding:3px 9px;border-radius:999px;font-weight:600;}
 .seg{display:flex;gap:8px;} .seg button{flex:1;border-radius:10px;padding:9px 4px;font-size:13px;font-weight:600;background:#0c1320;color:var(--muted);border:1px solid transparent;}
 .seg button.active{background:var(--card2);color:#fff;}
-.selbtn{border:1px solid var(--border);border-radius:12px;padding:11px 8px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted);}
+.selbtn{border:1px solid var(--border);border-radius:12px;padding:11px 8px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted);min-width:0;overflow:hidden;}
 .selbtn.active{border-color:var(--cyan);background:rgba(6,182,212,.12);color:#67e8f9;}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .stat{flex:1;min-width:0;}
@@ -66,15 +66,19 @@ svg{display:block;}
 .thumb img{display:block;width:88px;height:88px;object-fit:cover;}
 .thumb .del{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(4,8,15,.8);color:#fff;display:flex;align-items:center;justify-content:center;}
 .modal{position:fixed;inset:0;background:rgba(4,8,15,.92);z-index:60;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);}
-.modal .imgwrap{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto;}
+.modal .imgwrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto;}
 .modal img{max-width:100%;max-height:100%;border-radius:12px;}
 .modal .bar{display:flex;gap:10px;padding:12px 16px;}
+#toast{position:fixed;left:0;right:0;bottom:104px;display:flex;justify-content:center;z-index:70;pointer-events:none;}
+#toast .t{background:var(--card2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.45);opacity:0;transform:translateY(8px);transition:.25s;max-width:88%;text-align:center;}
+#toast .t.show{opacity:1;transform:none;}
 </style>
 </head>
 <body>
 <div id="app"><main id="view"></main></div>
 <nav><div class="inner" id="nav"></div></nav>
 <div id="modal"></div>
+<div id="toast"></div>
 
 <script>
 "use strict";
@@ -175,7 +179,8 @@ if(!state.devis)state.devis=SEED.devis;
 if(!state.settings.deduc)state.settings.deduc={};
 CATEGORIES.forEach(function(c){ if(state.settings.deduc[c.key]==null) state.settings.deduc[c.key]=c.deduc; });
 function deducOf(k){ var v=(state.settings.deduc||{})[k]; if(v==null)v=catMeta(k).deduc; v=Number(v); if(isNaN(v))v=100; return Math.max(0,Math.min(100,v)); }
-function persist(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+function persist(keepTs){ if(!keepTs) state.updatedAt=Date.now(); try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){} }
+if(!state.updatedAt){ state.updatedAt=Date.now(); persist(true); }
 
 /* ============ Justificatifs : IndexedDB ============ */
 var DB=null, DBERR=false;
@@ -221,16 +226,19 @@ function loadScript(src,cb){
  s.onload=function(){cb(true);};s.onerror=function(){cb(false);};
  document.head.appendChild(s);
 }
-function driveToken(clientId,cb){
+var driveTok=null, driveTokExp=0;
+function driveToken(clientId,cb,silent){
+ if(driveTok&&Date.now()<driveTokExp-60000)return cb(driveTok);
  loadScript('https://accounts.google.com/gsi/client',function(ok){
   if(!ok||!window.google||!google.accounts||!google.accounts.oauth2)return cb(null,'Librairie Google inaccessible (hors-ligne ?)');
   try{
    var tc=google.accounts.oauth2.initTokenClient({
     client_id:clientId,
     scope:'https://www.googleapis.com/auth/drive.file',
-    callback:function(resp){ if(resp&&resp.access_token)cb(resp.access_token); else cb(null,'Autorisation refusée'); }
+    callback:function(resp){ if(resp&&resp.access_token){ driveTok=resp.access_token; driveTokExp=Date.now()+(Number(resp.expires_in||3600)*1000); cb(driveTok);} else cb(null,(resp&&resp.error)||'Autorisation refusée'); },
+    error_callback:function(e){ cb(null,(e&&e.type)||'consentement requis'); }
    });
-   tc.requestAccessToken();
+   tc.requestAccessToken(silent?{prompt:''}:{});
   }catch(e){cb(null,e.message);}
  });
 }
@@ -247,6 +255,58 @@ function driveUploadBlob(token,blob,name,cb){
 }
 var pendingBlob=null;                     // ticket capturé mais frais pas encore enregistré
 var currentReceipt=null;                  // id du ticket ouvert dans la modale
+
+/* ---- Synchronisation complète des données (newest-wins) ---- */
+function backupObj(){ return {updatedAt:state.updatedAt,chantiers:state.chantiers,frais:state.frais,devis:state.devis,settings:{tauxProvision:state.settings.tauxProvision,deduc:state.settings.deduc}}; }
+function applyRemote(r){
+ if(r.chantiers)state.chantiers=r.chantiers;
+ if(r.frais)state.frais=r.frais;
+ if(r.devis)state.devis=r.devis;
+ if(r.settings){ if(r.settings.tauxProvision!=null)state.settings.tauxProvision=r.settings.tauxProvision; if(r.settings.deduc)state.settings.deduc=r.settings.deduc; }
+ state.updatedAt=r.updatedAt||Date.now();
+ persist(true);
+}
+function driveFindBackup(token,cb){
+ fetch('https://www.googleapis.com/drive/v3/files?spaces=drive&fields='+encodeURIComponent('files(id,modifiedTime)')+'&q='+encodeURIComponent("name='boreas-backup.json' and trashed=false"),{headers:{Authorization:'Bearer '+token}})
+  .then(function(r){return r.json();}).then(function(j){ cb(j&&j.files&&j.files[0]?j.files[0].id:null); }).catch(function(){cb(null);});
+}
+function driveDownloadBackup(token,id,cb){
+ fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media',{headers:{Authorization:'Bearer '+token}})
+  .then(function(r){return r.text();}).then(function(t){ try{cb(JSON.parse(t));}catch(e){cb(false);} }).catch(function(){cb(false);});
+}
+function driveCreateBackup(token,cb){
+ try{
+  var fd=new FormData();
+  fd.append('metadata',new Blob([JSON.stringify({name:'boreas-backup.json',mimeType:'application/json'})],{type:'application/json'}));
+  fd.append('file',new Blob([JSON.stringify(backupObj())],{type:'application/json'}));
+  fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:'Bearer '+token},body:fd})
+   .then(function(r){return r.json();}).then(function(j){cb(j&&j.id);}).catch(function(){cb(null);});
+ }catch(e){cb(null);}
+}
+function driveUpdateBackup(token,id,cb){
+ fetch('https://www.googleapis.com/upload/drive/v3/files/'+id+'?uploadType=media',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(backupObj())})
+  .then(function(r){return r.json();}).then(function(){cb(true);}).catch(function(){cb(false);});
+}
+function driveSync(silent,cb){
+ var cid=state.settings.driveClientId; if(!cid)return cb('noconfig');
+ if(!navigator.onLine)return cb('offline');
+ driveToken(cid,function(token,err){
+  if(!token)return cb(silent?'needauth':(err||'auth'));
+  driveFindBackup(token,function(fid){
+   if(!fid){ driveCreateBackup(token,function(id){ if(id){state.settings.driveBackupId=id;persist(true);cb(null,'uploaded');} else cb('create'); }); return; }
+   state.settings.driveBackupId=fid;
+   driveDownloadBackup(token,fid,function(remote){
+    if(remote===false)return cb('download');
+    var lt=state.updatedAt||0, rt=(remote&&remote.updatedAt)||0;
+    if(rt>lt){ applyRemote(remote); cb(null,'pulled'); }
+    else if(lt>rt){ driveUpdateBackup(token,fid,function(ok){ cb(ok?null:'update', ok?'pushed':undefined); }); }
+    else cb(null,'insync');
+   });
+  });
+ },silent);
+}
+function syncStatusText(){ var t=state.settings.lastSync; return t?('Dernière synchro : '+new Date(t).toLocaleString('fr-BE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})):'Jamais synchronisé sur cet appareil.'; }
+function toast(msg){ var el=$('toast'); if(!el)return; el.innerHTML='<div class="t">'+esc(msg)+'</div>'; var t=el.firstChild; requestAnimationFrame(function(){t.classList.add('show');}); setTimeout(function(){if(t)t.classList.remove('show');},2800); }
 
 var ui={tab:'dashboard',chantierForm:false,fraisForm:false,settings:false,filter:'tous',cStatut:'en_cours',fCat:CATEGORIES[0].key};
 
@@ -312,8 +372,10 @@ function viewDashboard(){
   +'<button class="btn btn-ghost" style="flex:1" onclick="B.emailRecap()">'+ico('send',18,'var(--cyan)')+'Email récap</button></div>'
   +'<div style="border-top:1px solid var(--border);margin:16px 0 14px"></div>'
   +'<div style="font-weight:600;margin-bottom:4px">Sauvegarde Google Drive (optionnel)</div>'
-  +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Colle ton ID client OAuth pour activer l\'envoi des tickets vers Drive. Fonctionne uniquement en ligne.</p>'
+  +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Colle ton ID client OAuth. La synchro (toutes les données) se fait au lancement et à la demande. Fonctionne uniquement en ligne.</p>'
   +'<input class="input" type="text" value="'+esc(state.settings.driveClientId||'')+'" placeholder="xxxxx.apps.googleusercontent.com" oninput="B.setDriveClientId(this.value)"/>'
+  +'<button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="B.syncNow(false)">'+ico('cloud',18,'var(--cyan)')+'Synchroniser maintenant</button>'
+  +'<div class="muted2" style="font-size:11px;margin-top:8px;text-align:center" id="syncStatus">'+syncStatusText()+'</div>'
   +'</div>'):'';
  return ''
  +'<div class="between mb2"><div class="row" style="align-items:center;gap:8px">'
@@ -562,7 +624,21 @@ var B={
      });
    });
  },
- setDriveClientId:function(v){ state.settings.driveClientId=(v||'').trim(); persist(); },
+ setDriveClientId:function(v){ state.settings.driveClientId=(v||'').trim(); driveTok=null; driveTokExp=0; persist(); },
+ syncNow:function(silent){
+   if(!state.settings.driveClientId){ if(!silent)toast('Ajoute d\'abord ton ID client OAuth Google.'); return; }
+   if(!navigator.onLine){ if(!silent)toast('Hors-ligne — synchronisation impossible.'); return; }
+   if(!silent)toast('Synchronisation…');
+   driveSync(silent,function(err,action){
+     if(err){ if(err==='needauth'){ if(!silent)toast('Appuie sur « Synchroniser » pour autoriser Google.'); return; }
+       if(!silent)toast('Synchro : '+err); return; }
+     state.settings.lastSync=Date.now(); persist(true);
+     var msg=action==='pulled'?'Données mises à jour depuis Drive.':action==='pushed'?'Sauvegarde envoyée sur Drive.':action==='uploaded'?'Première sauvegarde créée sur Drive.':'Déjà à jour.';
+     toast(msg);
+     var s=$('syncStatus'); if(s)s.textContent=syncStatusText();
+     if(action==='pulled')render();
+   });
+ },
  /* --- devis --- */
  devisVals:function(){
    return{
@@ -663,6 +739,8 @@ var B={
 };
 window.B=B;
 render();
+/* Auto-synchronisation au lancement (silencieuse ; retombe sur le bouton manuel si l'autorisation est requise) */
+if(state.settings.driveClientId){ setTimeout(function(){ B.syncNow(true); }, 700); }
 </script>
 </body>
 </html>
