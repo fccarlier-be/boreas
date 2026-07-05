@@ -270,7 +270,7 @@ var pendingBlob=null;                     // ticket capturé mais frais pas enco
 var currentReceipt=null;                  // id du ticket ouvert dans la modale
 
 /* ---- Synchronisation complète des données (newest-wins) ---- */
-function backupObj(map){ return {updatedAt:state.updatedAt,chantiers:state.chantiers,frais:state.frais,devis:state.devis,settings:{tauxProvision:state.settings.tauxProvision,deduc:state.settings.deduc},receipts:map||{}}; }
+function backupObj(map){ return {updatedAt:state.updatedAt,chantiers:state.chantiers,frais:state.frais,devis:state.devis,settings:{tauxProvision:state.settings.tauxProvision,deduc:state.settings.deduc,companyName:state.settings.companyName},receipts:map||{}}; }
 /* Construit la table fraisId -> idDriveDuTicket depuis IndexedDB */
 function gatherReceipts(cb){
  idbKeys(function(keys){
@@ -300,7 +300,7 @@ function applyRemote(r){
  if(r.chantiers)state.chantiers=r.chantiers;
  if(r.frais)state.frais=r.frais;
  if(r.devis)state.devis=r.devis;
- if(r.settings){ if(r.settings.tauxProvision!=null)state.settings.tauxProvision=r.settings.tauxProvision; if(r.settings.deduc)state.settings.deduc=r.settings.deduc; }
+ if(r.settings){ if(r.settings.tauxProvision!=null)state.settings.tauxProvision=r.settings.tauxProvision; if(r.settings.deduc)state.settings.deduc=r.settings.deduc; if(r.settings.companyName!=null)state.settings.companyName=r.settings.companyName; }
  state.updatedAt=r.updatedAt||Date.now();
  persist(true);
 }
@@ -400,6 +400,36 @@ function toast(msg){ var el=$('toast'); if(!el)return; el.innerHTML='<div class=
 var autoTimer=null, syncBusy=false;
 function scheduleAutoSync(){ if(!effectiveClientId()||!navigator.onLine)return; clearTimeout(autoTimer); autoTimer=setTimeout(function(){ if(window.B)B.syncNow(true); }, 3500); }
 
+/* ============ Génération PDF (sans dépendance externe) ============ */
+function euroPDF(n){ n=Math.round((Number(n)||0)*100)/100; var s=n.toFixed(2).replace('.',','); var p=s.split(','); p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,' '); return p.join(',')+' EUR'; }
+function pdfEsc(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)').replace(/[^\x00-\xFF]/g,function(c){return c==='€'?'EUR':(c==='’'||c==='‘')?"'":(c==='–'||c==='—')?'-':'?';}); }
+function makePDF(lines){
+ var y=800, cs='';
+ for(var i=0;i<lines.length;i++){ var ln=lines[i], size=ln.size||11, font=ln.bold?'F2':'F1'; if(ln.gap)y-=ln.gap; if(ln.t!==''){ cs+='BT /'+font+' '+size+' Tf 60 '+y.toFixed(1)+' Td ('+pdfEsc(ln.t)+') Tj ET\n'; } y-=size*1.55; }
+ var o=[
+  '<< /Type /Catalog /Pages 2 0 R >>',
+  '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+  '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>',
+  '<< /Length '+cs.length+' >>\nstream\n'+cs+'endstream',
+  '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+  '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'
+ ];
+ var pdf='%PDF-1.4\n', off=[];
+ for(var k=0;k<o.length;k++){ off.push(pdf.length); pdf+=(k+1)+' 0 obj\n'+o[k]+'\nendobj\n'; }
+ var xref=pdf.length; pdf+='xref\n0 '+(o.length+1)+'\n0000000000 65535 f \n';
+ for(var x=0;x<off.length;x++){ var s=''+off[x]; while(s.length<10)s='0'+s; pdf+=s+' 00000 n \n'; }
+ pdf+='trailer\n<< /Size '+(o.length+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+ var bytes=new Uint8Array(pdf.length); for(var b=0;b<pdf.length;b++)bytes[b]=pdf.charCodeAt(b)&0xff;
+ return new Blob([bytes],{type:'application/pdf'});
+}
+function downloadBlob(blob,name){ try{ var u=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(u);},1500); }catch(e){ alert('Téléchargement impossible : '+e.message); } }
+function sharePDF(blob,name,title,text){
+ try{ var file=new File([blob],name,{type:'application/pdf'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})&&navigator.share){ navigator.share({files:[file],title:title,text:text||''}).catch(function(){}); return; }
+ }catch(e){}
+ downloadBlob(blob,name); toast('PDF téléchargé (partage natif indisponible ici).');
+}
+
 var ui={tab:'dashboard',chantierForm:false,fraisForm:false,settings:false,driveAdv:false,filter:'tous',cStatut:'en_cours',fCat:CATEGORIES[0].key};
 
 /* ============ Finance ============ */
@@ -439,45 +469,10 @@ function gaugeSVG(ca){
 
 function viewDashboard(){
  var f=finance();
- var settingsPanel=ui.settings?(
-  '<div class="card pad mb3 pop">'
-  +'<div class="between mb2"><span style="font-weight:600">Taux de provision fiscale</span>'
-  +'<button onclick="B.toggleSettings()" style="color:var(--muted)">'+ico('x',18)+'</button></div>'
-  +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Estimation IPP + cotisations sociales complémentaires, appliquée au bénéfice net.</p>'
-  +'<div class="row" style="align-items:center">'
-  +'<input type="range" min="0" max="70" step="1" value="'+state.settings.tauxProvision+'" oninput="B.setTaux(this.value)" style="flex:1"/>'
-  +'<div style="min-width:64px;text-align:center;font-size:22px;font-weight:700;color:var(--orange)" id="tauxLbl">'+state.settings.tauxProvision+'%</div></div>'
-  +'<div style="border-top:1px solid var(--border);margin:16px 0 14px"></div>'
-  +'<div style="font-weight:600;margin-bottom:4px">Déductibilité par catégorie</div>'
-  +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Ajuste le % déductible selon les conseils de ton comptable. Chaque changement exige une double confirmation.</p>'
-  +CATEGORIES.map(function(c,i){var pd=deducOf(c.key);var kk=c.key.replace(/'/g,"\\'");return '<div class="row" style="align-items:center;gap:8px;margin-bottom:8px">'
-    +'<span class="icobox" style="width:28px;height:28px;background:'+c.color+'22;color:'+c.color+'">'+ico(c.icon,15)+'</span>'
-    +'<span class="trunc" style="flex:1;font-size:13px">'+c.key+'</span>'
-    +'<input class="input" id="ded_'+i+'" type="number" inputmode="numeric" min="0" max="100" step="1" value="'+pd+'" oninput="B.dedChange('+i+',\''+kk+'\',this.value)" style="width:58px;text-align:center;padding:9px"/>'
-    +'<span class="muted" style="font-size:14px;width:10px">%</span>'
-    +'<span id="dedact_'+i+'" style="min-width:70px;display:flex;gap:4px;justify-content:flex-end;align-items:center"></span></div>';}).join('')
-  +'<div style="border-top:1px solid var(--border);margin:16px 0 14px"></div>'
-  +'<div style="font-weight:600;margin-bottom:4px">Export comptable</div>'
-  +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Transmets tes chantiers et frais à ta comptabilité.</p>'
-  +'<div class="row">'
-  +'<button class="btn btn-ghost" style="flex:1" onclick="B.exportCSV()">'+ico('download',18,'var(--cyan)')+'CSV</button>'
-  +'<button class="btn btn-ghost" style="flex:1" onclick="B.emailRecap()">'+ico('send',18,'var(--cyan)')+'Email récap</button></div>'
-  +'<div style="border-top:1px solid var(--border);margin:16px 0 14px"></div>'
-  +'<div style="font-weight:600;margin-bottom:4px">Sauvegarde Google Drive</div>'
-  +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Synchronise toutes tes données (au lancement et à la demande). Fonctionne uniquement en ligne.</p>'
-  +'<button class="btn btn-primary" style="width:100%" onclick="B.syncNow(false)">'+ico('cloud',18)+(state.settings.lastSync?'Synchroniser mon Drive':'Connecter mon Drive')+'</button>'
-  +'<div class="muted2" style="font-size:11px;margin-top:8px;text-align:center" id="syncStatus">'+syncStatusText()+'</div>'
-  +'<div style="text-align:center;margin-top:10px"><button class="muted2" style="font-size:11px;text-decoration:underline" onclick="B.toggleDriveAdv()">Options avancées</button></div>'
-  +(ui.driveAdv?('<div style="margin-top:8px"><span class="label">ID client OAuth personnalisé</span>'
-    +'<input class="input" type="text" value="'+esc(state.settings.driveClientId||'')+'" placeholder="Laisser vide = ID intégré" oninput="B.setDriveClientId(this.value)"/>'
-    +'<p class="muted2" style="font-size:10px;margin-top:6px">Par défaut, l\'app utilise l\'ID intégré. N\'en renseigne un autre que pour connecter un projet Google différent.</p></div>'):'')
-  +'</div>'):'';
  return ''
- +'<div class="between mb2"><div class="row" style="align-items:center;gap:8px">'
+ +'<div class="between mb3"><div class="row" style="align-items:center;gap:8px">'
  +'<div class="icobox" style="width:36px;height:36px;background:rgba(6,182,212,.15);color:var(--cyan)">'+ico('snow',20)+'</div>'
- +'<div><h1 style="line-height:1.1">Boreas Assistant</h1><p class="muted" style="font-size:12px">Indépendant compl. · Franchise TVA</p></div></div>'
- +'<button onclick="B.toggleSettings()" class="icobox" style="width:38px;height:38px;background:var(--card2);color:var(--muted)">'+ico('gear',19)+'</button></div>'
- +settingsPanel
+ +'<div><h1 style="line-height:1.1">'+(state.settings.companyName?esc(state.settings.companyName):'Boreas Assistant')+'</h1><p class="muted" style="font-size:12px">Indépendant compl. · Franchise TVA</p></div></div></div>'
  +'<div class="card pad mb3">'
  +'<div class="between mb1"><span style="font-weight:600;font-size:14px">Plafond franchise TVA</span>'+ico('trend',16,'var(--muted2)')+'</div>'
  +gaugeSVG(f.ca)
@@ -550,9 +545,7 @@ function viewDevis(){
  +'<div style="border-top:1px solid var(--border);margin:8px 0"></div>'
  +'<div class="between" style="align-items:flex-end"><div><div style="font-weight:600">Total à facturer</div><div class="muted2" style="font-size:11px">TVA non applicable (franchise)</div></div>'
  +'<div style="font-size:30px;font-weight:700;color:var(--cyan)" id="r_total">'+fmt2(0)+'</div></div></div>'
- +'<div class="row mb2">'
- +'<button class="btn btn-ghost" style="flex:1" onclick="B.sendMail()">'+ico('send',18,'var(--cyan)')+'Email</button>'
- +'<button class="btn btn-ghost" style="flex:1" onclick="B.sendWA()">'+ico('whatsapp',18,'var(--green)')+'WhatsApp</button></div>'
+ +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="B.shareDevisPDF()">'+ico('send',18,'var(--cyan)')+'Partager le devis (PDF)</button>'
  +'<button class="btn btn-primary" style="width:100%" onclick="B.convertDevis()">'+ico('arrow',19)+'Convertir en chantier</button>';
 }
 
@@ -602,8 +595,48 @@ function viewFrais(){
 }
 
 /* ============ Render ============ */
-var VIEWS={dashboard:viewDashboard,chantiers:viewChantiers,devis:viewDevis,frais:viewFrais};
-var NAVITEMS=[['dashboard','Dashboard','home'],['chantiers','Chantiers','hardhat'],['devis','Devis','calc'],['frais','Frais','receipt']];
+function viewSettings(){
+ return '<h1 class="mb1">Réglages</h1><p class="muted mb3" style="font-size:12px">Société, fiscalité et sauvegarde.</p>'
+ +'<div class="card pad mb3">'
+ +'<div style="font-weight:600;margin-bottom:4px">Société</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:10px">Apparaît en en-tête de tes devis (email / WhatsApp).</p>'
+ +'<span class="label">Nom de la société</span>'
+ +'<input class="input" type="text" value="'+esc(state.settings.companyName||'')+'" placeholder="Ex: Boreas SRL" oninput="B.setCompany(this.value)"/></div>'
+ +'<div class="card pad mb3">'
+ +'<div style="font-weight:600;margin-bottom:4px">Taux de provision fiscale</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Estimation IPP + cotisations sociales complémentaires, appliquée au bénéfice net.</p>'
+ +'<div class="row" style="align-items:center">'
+ +'<input type="range" min="0" max="70" step="1" value="'+state.settings.tauxProvision+'" oninput="B.setTaux(this.value)" style="flex:1"/>'
+ +'<div style="min-width:64px;text-align:center;font-size:22px;font-weight:700;color:var(--orange)" id="tauxLbl">'+state.settings.tauxProvision+'%</div></div></div>'
+ +'<div class="card pad mb3">'
+ +'<div style="font-weight:600;margin-bottom:4px">Déductibilité par catégorie</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Ajuste le % déductible selon les conseils de ton comptable. Chaque changement exige une double confirmation.</p>'
+ +CATEGORIES.map(function(c,i){var pd=deducOf(c.key);var kk=c.key.replace(/'/g,"\\'");return '<div class="row" style="align-items:center;gap:8px;margin-bottom:8px">'
+   +'<span class="icobox" style="width:28px;height:28px;background:'+c.color+'22;color:'+c.color+'">'+ico(c.icon,15)+'</span>'
+   +'<span class="trunc" style="flex:1;font-size:13px">'+c.key+'</span>'
+   +'<input class="input" id="ded_'+i+'" type="number" inputmode="numeric" min="0" max="100" step="1" value="'+pd+'" oninput="B.dedChange('+i+',\''+kk+'\',this.value)" style="width:58px;text-align:center;padding:9px"/>'
+   +'<span class="muted" style="font-size:14px;width:10px">%</span>'
+   +'<span id="dedact_'+i+'" style="min-width:70px;display:flex;gap:4px;justify-content:flex-end;align-items:center"></span></div>';}).join('')
+ +'</div>'
+ +'<div class="card pad mb3">'
+ +'<div style="font-weight:600;margin-bottom:4px">Export comptable</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Transmets tes chantiers et frais à ta comptabilité.</p>'
+ +'<div class="row">'
+ +'<button class="btn btn-ghost" style="flex:1" onclick="B.exportCSV()">'+ico('download',18,'var(--cyan)')+'CSV</button>'
+ +'<button class="btn btn-ghost" style="flex:1" onclick="B.recapPDF()">'+ico('send',18,'var(--cyan)')+'Récap PDF</button></div></div>'
+ +'<div class="card pad mb3">'
+ +'<div style="font-weight:600;margin-bottom:4px">Sauvegarde Google Drive</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Synchronise toutes tes données (automatiquement et à la demande). Fonctionne uniquement en ligne.</p>'
+ +'<button class="btn btn-primary" style="width:100%" onclick="B.syncNow(false)">'+ico('cloud',18)+(state.settings.lastSync?'Synchroniser mon Drive':'Connecter mon Drive')+'</button>'
+ +'<div class="muted2" style="font-size:11px;margin-top:8px;text-align:center" id="syncStatus">'+syncStatusText()+'</div>'
+ +'<div style="text-align:center;margin-top:10px"><button class="muted2" style="font-size:11px;text-decoration:underline" onclick="B.toggleDriveAdv()">Options avancées</button></div>'
+ +(ui.driveAdv?('<div style="margin-top:8px"><span class="label">ID client OAuth personnalisé</span>'
+   +'<input class="input" type="text" value="'+esc(state.settings.driveClientId||'')+'" placeholder="Laisser vide = ID intégré" oninput="B.setDriveClientId(this.value)"/>'
+   +'<p class="muted2" style="font-size:10px;margin-top:6px">Par défaut, l\'app utilise l\'ID intégré. N\'en renseigne un autre que pour connecter un projet Google différent.</p></div>'):'')
+ +'</div>';
+}
+var VIEWS={dashboard:viewDashboard,chantiers:viewChantiers,devis:viewDevis,frais:viewFrais,settings:viewSettings};
+var NAVITEMS=[['dashboard','Dashboard','home'],['chantiers','Chantiers','hardhat'],['devis','Devis','calc'],['frais','Frais','receipt'],['settings','Réglages','gear']];
 function renderNav(){
  $('nav').innerHTML=NAVITEMS.map(function(n){var on=ui.tab===n[0];
   return '<button class="'+(on?'active':'')+'" onclick="B.setTab(\''+n[0]+'\')">'+ico(n[2],23,'currentColor',on?2.2:1.8)+'<span class="lbl">'+n[1]+'</span></button>';
@@ -619,7 +652,7 @@ function render(){
 /* ============ Actions ============ */
 var B={
  setTab:function(t){ if(ui.tab==='devis')B.saveDevis(); ui.tab=t; ui.settings=false; render(); },
- toggleSettings:function(){ ui.settings=!ui.settings; render(); },
+ setCompany:function(v){ state.settings.companyName=v||''; persist(); },
  setTaux:function(v){ state.settings.tauxProvision=Number(v); persist(); var l=$('tauxLbl'); if(l)l.textContent=v+'%'; },
  dedChange:function(i,key){
    var cont=$('dedact_'+i), inp=$('ded_'+i); if(!cont||!inp)return;
@@ -773,19 +806,33 @@ var B={
  devisBody:function(){
    var v=B.devisVals(), mat=v.prix*v.coeff, mo=v.heures*v.tarif, total=mat+mo+v.depl;
    var client=($('d_client')||{}).value||'';
-   return 'Devis Boreas'+(client?' - '+client:'')+'\n\n'
+   var comp=(state.settings.companyName||'').trim();
+   return (comp?comp+'\n':'')+'Devis'+(client?' - '+client:'')+'\n\n'
      +'- Materiel (achat '+fmt2(v.prix)+' x coef '+v.coeff+') : '+fmt2(mat)+'\n'
      +'- Main-d\'oeuvre ('+v.heures+'h x '+fmt2(v.tarif)+'/h) : '+fmt2(mo)+'\n'
      +'- Deplacement : '+fmt2(v.depl)+'\n\n'
      +'TOTAL A PAYER : '+fmt2(total)+'\n'
-     +'(TVA non applicable, art. 56bis - franchise de TVA)';
+     +'(TVA non applicable, art. 56bis - franchise de TVA)'
+     +(comp?'\n\n'+comp:'');
  },
- sendMail:function(){
-   var client=($('d_client')||{}).value||'', email=($('d_email')||{}).value||'';
-   var subject=encodeURIComponent('Votre devis'+(client?' - '+client:'')+' - Boreas');
-   window.location.href='mailto:'+encodeURIComponent(email)+'?cc=fc.carlier@gmail.com&subject='+subject+'&body='+encodeURIComponent(B.devisBody());
+ shareDevisPDF:function(){
+   var v=B.devisVals(), mat=v.prix*v.coeff, mo=v.heures*v.tarif, total=mat+mo+v.depl;
+   var client=(($('d_client')||{}).value||'').trim();
+   var comp=(state.settings.companyName||'').trim();
+   var L=[];
+   if(comp)L.push({t:comp,size:18,bold:true});
+   L.push({t:'DEVIS',size:14,bold:true,gap:comp?12:0});
+   if(client)L.push({t:'Client : '+client,size:11,gap:8});
+   L.push({t:'Date : '+frDate(todayISO()),size:11,gap:client?0:8});
+   L.push({t:'Materiel (achat '+euroPDF(v.prix)+' x '+v.coeff+') : '+euroPDF(mat),size:11,gap:14});
+   L.push({t:'Main-d\'oeuvre ('+v.heures+' h x '+euroPDF(v.tarif)+') : '+euroPDF(mo),size:11});
+   L.push({t:'Deplacement : '+euroPDF(v.depl),size:11});
+   L.push({t:'TOTAL A PAYER : '+euroPDF(total),size:15,bold:true,gap:16});
+   L.push({t:'TVA non applicable, art. 56bis (franchise de TVA).',size:9,gap:18});
+   if(comp)L.push({t:comp,size:10,gap:24});
+   var name='devis'+(client?'-'+client.replace(/[^A-Za-z0-9]+/g,'_'):'')+'.pdf';
+   sharePDF(makePDF(L),name,'Devis'+(client?' - '+client:''),B.devisBody());
  },
- sendWA:function(){ window.open('https://wa.me/?text='+encodeURIComponent(B.devisBody()),'_blank'); },
  convertDevis:function(){
    var v=B.devisVals(), total=Math.round(v.prix*v.coeff+v.heures*v.tarif+v.depl);
    var client=(($('d_client')||{}).value||'').trim()||'Nouveau client';
@@ -796,6 +843,8 @@ var B={
  exportCSV:function(){
    function q(s){s=String(s==null?'':s);return /[";\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
    var f=finance(), sep=';', L=[];
+   var comp=(state.settings.companyName||'').trim();
+   if(comp)L.push(q(comp));
    L.push('BOREAS ASSISTANT - Export du '+todayISO());
    L.push('');
    L.push('RESUME');
@@ -828,19 +877,23 @@ var B={
      setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},1500);
    }catch(e){ alert('Export impossible sur ce navigateur : '+e.message); }
  },
- emailRecap:function(){
-   var f=finance();
-   var body='RECAP BOREAS - '+frDate(todayISO())+'\n\n'
-     +'CA encaisse : '+fmt(f.ca)+'\n'
-     +'Total frais : '+fmt(f.frais)+'\n'
-     +'Benefice net : '+fmt(f.benefice)+'\n'
-     +'Provision '+f.taux+'% : '+fmt(f.provision)+'\n'
-     +'Reste en poche : '+fmt(f.reste)+'\n\n'
-     +'Plafond franchise TVA : '+fmt(f.ca)+' / '+fmt(TVA_LIMIT)+'\n\n'
-     +'Chantiers payes : '+state.chantiers.filter(function(c){return c.statut==='paye';}).length+'\n'
-     +'Chantiers en cours : '+state.chantiers.filter(function(c){return c.statut!=='paye';}).length+'\n'
-     +'Frais enregistres : '+state.frais.length;
-   window.location.href='mailto:fc.carlier@gmail.com?subject='+encodeURIComponent('Recap Boreas - '+todayISO())+'&body='+encodeURIComponent(body);
+ recapPDF:function(){
+   var f=finance(); var comp=(state.settings.companyName||'').trim();
+   var L=[];
+   if(comp)L.push({t:comp,size:18,bold:true});
+   L.push({t:'RECAPITULATIF',size:14,bold:true,gap:comp?12:0});
+   L.push({t:'Au '+frDate(todayISO()),size:11,gap:8});
+   L.push({t:'CA encaisse : '+euroPDF(f.ca),size:11,gap:14});
+   L.push({t:'Total frais reels : '+euroPDF(f.fraisReel),size:11});
+   L.push({t:'Frais deductibles : '+euroPDF(f.fraisDeduc),size:11});
+   L.push({t:'Benefice net (base imposable) : '+euroPDF(f.benefice),size:11});
+   L.push({t:'Provision '+f.taux+'% : '+euroPDF(f.provision),size:11});
+   L.push({t:'Reste en poche : '+euroPDF(f.reste),size:12,bold:true});
+   L.push({t:'Plafond franchise TVA : '+euroPDF(f.ca)+' / '+euroPDF(TVA_LIMIT),size:11,gap:14});
+   L.push({t:'Chantiers payes : '+state.chantiers.filter(function(c){return c.statut==='paye';}).length,size:11});
+   L.push({t:'Chantiers en cours : '+state.chantiers.filter(function(c){return c.statut!=='paye';}).length,size:11});
+   L.push({t:'Frais enregistres : '+state.frais.length,size:11});
+   sharePDF(makePDF(L),'recap-'+todayISO()+'.pdf','Recapitulatif'+(comp?' - '+comp:''),'Recapitulatif comptable'+(comp?' - '+comp:''));
  }
 };
 window.B=B;
