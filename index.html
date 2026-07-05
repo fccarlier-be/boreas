@@ -181,7 +181,7 @@ if(!state.devis)state.devis=SEED.devis;
 if(!state.settings.deduc)state.settings.deduc={};
 CATEGORIES.forEach(function(c){ if(state.settings.deduc[c.key]==null) state.settings.deduc[c.key]=c.deduc; });
 function deducOf(k){ var v=(state.settings.deduc||{})[k]; if(v==null)v=catMeta(k).deduc; v=Number(v); if(isNaN(v))v=100; return Math.max(0,Math.min(100,v)); }
-function persist(keepTs){ if(!keepTs) state.updatedAt=Date.now(); try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){} }
+function persist(keepTs){ if(!keepTs){ state.updatedAt=Date.now(); scheduleAutoSync(); } try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){} }
 if(!state.updatedAt){ state.updatedAt=Date.now(); persist(true); }
 function effectiveClientId(){ return (state.settings.driveClientId||'').trim() || DRIVE_CLIENT_ID; }
 
@@ -396,6 +396,9 @@ function driveSync(silent,cb){
 }
 function syncStatusText(){ var t=state.settings.lastSync; return t?('Dernière synchro : '+new Date(t).toLocaleString('fr-BE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})):'Jamais synchronisé sur cet appareil.'; }
 function toast(msg){ var el=$('toast'); if(!el)return; el.innerHTML='<div class="t">'+esc(msg)+'</div>'; var t=el.firstChild; requestAnimationFrame(function(){t.classList.add('show');}); setTimeout(function(){if(t)t.classList.remove('show');},2800); }
+/* Auto-synchro silencieuse, anti-rebond après chaque modif de données */
+var autoTimer=null, syncBusy=false;
+function scheduleAutoSync(){ if(!effectiveClientId()||!navigator.onLine)return; clearTimeout(autoTimer); autoTimer=setTimeout(function(){ if(window.B)B.syncNow(true); }, 3500); }
 
 var ui={tab:'dashboard',chantierForm:false,fraisForm:false,settings:false,driveAdv:false,filter:'tous',cStatut:'en_cours',fCat:CATEGORIES[0].key};
 
@@ -724,17 +727,22 @@ var B={
  syncNow:function(silent){
    if(!effectiveClientId()){ if(!silent)toast('Aucun ID client OAuth configuré.'); return; }
    if(!navigator.onLine){ if(!silent)toast('Hors-ligne — synchronisation impossible.'); return; }
+   if(syncBusy){ if(silent){ scheduleAutoSync(); return; } }
+   syncBusy=true;
    if(!silent)toast('Synchronisation…');
    driveSync(silent,function(err,action,nUp,nDown){
+     syncBusy=false;
      if(err){ if(err==='needauth'){ if(!silent)toast('Appuie sur « Connecter mon Drive » pour autoriser Google.'); return; }
        if(!silent)toast('Synchro : '+err); return; }
      state.settings.lastSync=Date.now(); persist(true);
-     var msg=action==='pulled'?'Données mises à jour depuis Drive.':action==='pushed'?'Sauvegarde envoyée sur Drive.':action==='uploaded'?'Première sauvegarde créée sur Drive.':'Déjà à jour.';
-     var ex=[]; if(nUp>0)ex.push(nUp+' photo'+(nUp>1?'s':'')+' envoyée'+(nUp>1?'s':'')); if(nDown>0)ex.push(nDown+' photo'+(nDown>1?'s':'')+' restaurée'+(nDown>1?'s':''));
-     if(ex.length)msg+=' '+ex.join(', ')+'.';
-     toast(msg);
      var s=$('syncStatus'); if(s)s.textContent=syncStatusText();
      if(action==='pulled'||nDown>0)render();
+     if(!silent){
+       var msg=action==='pulled'?'Données mises à jour depuis Drive.':action==='pushed'?'Sauvegarde envoyée sur Drive.':action==='uploaded'?'Première sauvegarde créée sur Drive.':'Déjà à jour.';
+       var ex=[]; if(nUp>0)ex.push(nUp+' photo'+(nUp>1?'s':'')+' envoyée'+(nUp>1?'s':'')); if(nDown>0)ex.push(nDown+' photo'+(nDown>1?'s':'')+' restaurée'+(nDown>1?'s':''));
+       if(ex.length)msg+=' '+ex.join(', ')+'.';
+       toast(msg);
+     }
    });
  },
  /* --- devis --- */
