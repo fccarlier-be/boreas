@@ -36,6 +36,21 @@ h1{font-size:19px;font-weight:700;}
 .field{margin-bottom:12px;}
 .input{width:100%;min-width:0;background:#0c1320;border:1px solid var(--border);border-radius:12px;padding:12px 14px;color:var(--text);outline:none;box-sizing:border-box;}
 .input:focus{border-color:var(--cyan);}
+
+input[type="date"].input{
+  -webkit-appearance:none;
+  appearance:none;
+  display:block;
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+  height:46px;
+  padding:12px 14px;
+  line-height:22px;
+}
+input[type="date"]::-webkit-date-and-time-value{text-align:left;}
+.input,input[type="date"],input[type="number"],input[type="text"],select{box-sizing:border-box;}
+
 select.input{appearance:none;-webkit-appearance:none;padding-right:38px;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");background-repeat:no-repeat;background-position:right 12px center;}
 .btn{border-radius:12px;padding:13px;font-weight:700;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px;transition:.1s;}
 .btn:active{transform:scale(.98);}
@@ -554,8 +569,8 @@ function viewFrais(){
  var form=ui.fraisForm?(
   '<div class="card pad mb3 pop">'
   +'<div class="field"><span class="label">Libellé</span><input class="input" id="f_lib" placeholder="Ex: Détecteur de fuite"/></div>'
-  +'<div class="row"><div class="field" style="flex:1;min-width:0"><span class="label">Montant (€)</span><input class="input" id="f_montant" type="number" inputmode="decimal" placeholder="0"/></div>'
-  +'<div class="field" style="flex:1;min-width:0"><span class="label">Date</span><input class="input" id="f_date" type="date" value="'+todayISO()+'"/></div></div>'
+  +'<div class="grid2"><div class="field"><span class="label">Montant (€)</span><input class="input" id="f_montant" type="number" inputmode="decimal" placeholder="0"/></div>'
+  +'<div class="field"><span class="label">Date</span><input class="input" id="f_date" type="date" value="'+todayISO()+'"/></div></div>'
   +'<div class="field"><span class="label">Catégorie</span>'
   +'<select class="input" id="f_cat" onchange="B.setFCat(this.value)">'
   +CATEGORIES.map(function(c){var pd=deducOf(c.key);return '<option value="'+esc(c.key)+'"'+(ui.fCat===c.key?' selected':'')+'>'+esc(c.key)+(pd<100?' — '+pd+'% déduct.':'')+'</option>';}).join('')
