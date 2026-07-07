@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Boreas" />
+<meta name="theme-color" content="#0a0f1a" />
+<title>Boreas Assistant</title>
+<link rel="manifest" href='data:application/manifest+json,{"name":"Boreas Assistant","short_name":"Boreas","display":"standalone","background_color":"#0a0f1a","theme_color":"#0a0f1a","start_url":".","icons":[]}' />
+<style>
+:root{
+  --bg:#0a0f1a; --card:#141c2b; --card2:#1b2536; --border:#26324a;
+  --cyan:#06b6d4; --cyan-d:#0891b2; --text:#e5edf5; --muted:#94a3b8; --muted2:#64748b;
+  --green:#10b981; --orange:#f59e0b; --red:#ef4444; --pink:#f472b6;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+html,body{background:var(--bg);color:var(--text);-webkit-text-size-adjust:100%;}
+body{overscroll-behavior:none;}
+button{cursor:pointer;border:none;background:none;color:inherit;font-size:inherit;}
+input,select,textarea{font-size:16px;font-family:inherit;}
+::-webkit-scrollbar{display:none;}
+#app{max-width:460px;margin:0 auto;min-height:100vh;padding-top:env(safe-area-inset-top);padding-bottom:92px;}
+main{padding:14px 16px 16px;}
+h1{font-size:19px;font-weight:700;}
+.muted{color:var(--muted);} .muted2{color:var(--muted2);}
+.row{display:flex;gap:12px;} .between{display:flex;align-items:center;justify-content:space-between;}
+.mb1{margin-bottom:4px;}.mb2{margin-bottom:12px;}.mb3{margin-bottom:16px;}.mb4{margin-bottom:20px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;}
+.pad{padding:16px;}
+.pop{animation:pop .18s ease-out;} @keyframes pop{from{transform:scale(.97);opacity:.3}to{transform:scale(1);opacity:1}}
+.icobox{border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px;display:block;}
+.field{margin-bottom:12px;}
+.input{width:100%;min-width:0;background:#0c1320;border:1px solid var(--border);border-radius:12px;padding:12px 14px;color:var(--text);outline:none;box-sizing:border-box;}
+.input:focus{border-color:var(--cyan);}
+
+input[type="date"].input{
+  -webkit-appearance:none;
+  appearance:none;
+  display:block;
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+  height:46px;
+  padding:12px 14px;
+  line-height:22px;
+}
+input[type="date"]::-webkit-date-and-time-value{text-align:left;}
+.input,input[type="date"],input[type="number"],input[type="text"],select{box-sizing:border-box;}
+
+select.input{appearance:none;-webkit-appearance:none;padding-right:38px;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");background-repeat:no-repeat;background-position:right 12px center;}
+.btn{border-radius:12px;padding:13px;font-weight:700;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px;transition:.1s;}
+.btn:active{transform:scale(.98);}
+.btn-primary{background:var(--cyan);color:#06222b;}
+.btn-ghost{background:var(--card2);border:1px solid var(--border);color:var(--text);font-weight:600;}
+.chip{font-size:10px;padding:3px 9px;border-radius:999px;font-weight:600;}
+.seg{display:flex;gap:8px;} .seg button{flex:1;border-radius:10px;padding:9px 4px;font-size:13px;font-weight:600;background:#0c1320;color:var(--muted);border:1px solid transparent;}
+.seg button.active{background:var(--card2);color:#fff;}
+.selbtn{border:1px solid var(--border);border-radius:12px;padding:11px 8px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted);min-width:0;overflow:hidden;}
+.selbtn.active{border-color:var(--cyan);background:rgba(6,182,212,.12);color:#67e8f9;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.stat{flex:1;min-width:0;}
+.stat .v{font-size:20px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bar{height:8px;border-radius:999px;background:#22304a;overflow:hidden;}
+.bar>span{display:block;height:100%;border-radius:999px;transition:width .6s;}
+.listitem{padding:14px;} .trunc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+input[type=range]{-webkit-appearance:none;height:6px;border-radius:999px;background:#22304a;outline:none;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--cyan);border:3px solid #06222b;}
+nav{position:fixed;bottom:0;left:0;right:0;background:rgba(10,15,26,.96);backdrop-filter:blur(12px);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom);z-index:30;}
+nav .inner{max-width:460px;margin:0 auto;display:flex;}
+nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 0 8px;color:var(--muted2);}
+nav button.active{color:var(--cyan);}
+nav .lbl{font-size:10px;font-weight:600;}
+.overlay{position:fixed;inset:0;background:rgba(4,8,15,.72);z-index:40;display:flex;align-items:flex-end;}
+.sheet{background:var(--card);border-top-left-radius:22px;border-top-right-radius:22px;border:1px solid var(--border);width:100%;max-width:460px;margin:0 auto;padding:20px 16px calc(24px + env(safe-area-inset-bottom));animation:up .22s ease-out;}
+@keyframes up{from{transform:translateY(100%)}to{transform:translateY(0)}}
+svg{display:block;}
+.thumb{border:1px solid var(--border);border-radius:12px;overflow:hidden;position:relative;display:inline-block;}
+.thumb img{display:block;width:88px;height:88px;object-fit:cover;}
+.thumb .del{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(4,8,15,.8);color:#fff;display:flex;align-items:center;justify-content:center;}
+.modal{position:fixed;inset:0;background:rgba(4,8,15,.92);z-index:60;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);}
+.modal .imgwrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto;}
+.modal img{max-width:100%;max-height:100%;border-radius:12px;}
+.modal .bar{display:flex;gap:10px;padding:12px 16px;}
+#toast{position:fixed;left:0;right:0;bottom:104px;display:flex;justify-content:center;z-index:70;pointer-events:none;}
+#toast .t{background:var(--card2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.45);opacity:0;transform:translateY(8px);transition:.25s;max-width:88%;text-align:center;}
+#toast .t.show{opacity:1;transform:none;}
+</style>
+</head>
+<body>
+<div id="app"><main id="view"></main></div>
+<nav><div class="inner" id="nav"></div></nav>
+<div id="modal"></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ============ Helpers ============ */
+var fmt=function(n){return new Intl.NumberFormat('fr-BE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(Number(n)||0);};
+var fmt2=function(n){return new Intl.NumberFormat('fr-BE',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(Number(n)||0);};
+var uid=function(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);};
+var todayISO=function(){return new Date().toISOString().slice(0,10);};
+var frDate=function(iso){try{return new Date(iso+'T00:00').toLocaleDateString('fr-BE',{day:'2-digit',month:'short',year:'numeric'});}catch(e){return iso;}};
+var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
+var $=function(id){return document.getElementById(id);};
+
+/* ============ Icons ============ */
+var ICONS={
+ home:'<path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10h6v-6h2v6h6V10"/>',
+ hardhat:'<path d="M2 18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-1a8 8 0 0 0-16 0"/><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/><path d="M4 15v-2a6 6 0 0 1 6-6"/><path d="M14 7a6 6 0 0 1 6 6v2"/>',
+ calc:'<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="16" y1="14" x2="16" y2="18"/><line x1="8" y1="18" x2="12" y2="18"/><line x1="8" y1="10" x2="8" y2="10.01"/><line x1="12" y1="10" x2="12" y2="10.01"/><line x1="16" y1="10" x2="16" y2="10.01"/><line x1="8" y1="14" x2="8" y2="14.01"/><line x1="12" y1="14" x2="12" y2="14.01"/>',
+ receipt:'<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1V2l-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/>',
+ plus:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+ send:'<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+ whatsapp:'<path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-4-1L3 21l2-5.5a8.5 8.5 0 0 1-1-4 8.38 8.38 0 0 1 8.5-8.5 8.5 8.5 0 0 1 8.5 8.5Z"/>',
+ trash:'<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M6 6v14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6"/>',
+ snow:'<line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><path d="m4.9 4.9 14.2 14.2"/><path d="m19.1 4.9-14.2 14.2"/>',
+ wallet:'<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2V5"/><path d="M18 12a1 1 0 0 0 0 2h.01"/>',
+ piggy:'<path d="M19 9a2 2 0 0 0-2-2h-1l-1-2H9a5 5 0 0 0-5 5 4 4 0 0 0 1.5 3v3h3v-1h4v1h3v-3a4 4 0 0 0 1-2h1a1 1 0 0 0 1-1V9Z"/><path d="M13 7h.01"/>',
+ trend:'<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+ coins:'<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/>',
+ check:'<polyline points="20 6 9 17 4 12"/>',
+ clock:'<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
+ x:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+ arrow:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+ truck:'<path d="M10 17h4V5H2v12h3"/><path d="M20 17h1a1 1 0 0 0 1-1v-3.34a1 1 0 0 0-.3-.7l-2.66-2.66a1 1 0 0 0-.7-.3H14v8h1"/><circle cx="7.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
+ wrench:'<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.7-.4-.4-2.7 2.5-2.5Z"/>',
+ box:'<path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/>',
+ gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+ utensils:'<path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 0 0 2-2V2"/><path d="M5 2v20"/><path d="M19 15V2a4 4 0 0 0-2 4v5a2 2 0 0 0 2 2h0v6"/>',
+ download:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+ gift:'<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/><path d="M12 8C12 8 12 4 9 4a2 2 0 0 0 0 4h3Z"/><path d="M12 8c0 0 0-4 3-4a2 2 0 0 1 0 4h-3Z"/>',
+ book:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>',
+ bed:'<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>',
+ shirt:'<path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23Z"/>',
+ camera:'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.2"/>',
+ image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
+ cloud:'<path d="M12 13v8"/><path d="m8 17 4-4 4 4"/><path d="M20 16.5A4.5 4.5 0 0 0 17 8h-1.26A8 8 0 1 0 4 15.25"/>',
+ edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+};
+function ico(name,size,color,stroke){
+ size=size||24;stroke=stroke||2;
+ return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="'+(color||'currentColor')+'" stroke-width="'+stroke+'" stroke-linecap="round" stroke-linejoin="round">'+(ICONS[name]||'')+'</svg>';
+}
+
+/* ============ Constants & seed ============ */
+var TVA_LIMIT=25000;
+var DRIVE_CLIENT_ID='376867033640-00ni2l2s06kgol1hjrfs75s5fjert4v5.apps.googleusercontent.com'; // ID client OAuth (public, restreint à l'origine autorisée)
+var CATEGORIES=[
+ {key:'Matériel revendu',icon:'box',color:'#22d3ee',deduc:100},
+ {key:'Outillage & Équipement',icon:'wrench',color:'#a78bfa',deduc:100},
+ {key:'Déplacements',icon:'truck',color:'#f59e0b',deduc:100},
+ {key:'Fonctionnement',icon:'gear',color:'#f472b6',deduc:100},
+ {key:'Formations & Logiciels',icon:'book',color:'#38bdf8',deduc:100},
+ {key:'Logement / Hôtel',icon:'bed',color:'#2dd4bf',deduc:100},
+ {key:'Vêtements & EPI',icon:'shirt',color:'#a3e635',deduc:100},
+ {key:'Restaurant',icon:'utensils',color:'#fb7185',deduc:69},
+ {key:'Cadeaux clients',icon:'gift',color:'#e879f9',deduc:50}
+];
+var catMeta=function(k){for(var i=0;i<CATEGORIES.length;i++)if(CATEGORIES[i].key===k)return CATEGORIES[i];return CATEGORIES[0];};
+
+var SEED={
+ chantiers:[
+  {id:uid(),client:'Janssens',description:'Installation mono-split 3,5 kW salon',montant:1850,statut:'paye',date:'2026-05-14'},
+  {id:uid(),client:'Boulangerie Dupuis',description:'Entretien chambre froide + gaz',montant:640,statut:'paye',date:'2026-06-02'},
+  {id:uid(),client:'Villa Lecomte',description:'Multi-split 3 unités (devis accepté)',montant:5400,statut:'en_cours',date:'2026-06-28'},
+  {id:uid(),client:'Café Le Central',description:'Dépannage clim gainable',montant:320,statut:'paye',date:'2026-06-20'}
+ ],
+ frais:[
+  {id:uid(),libelle:'Station de récupération fluide (grossiste)',montant:780,date:'2026-04-10',categorie:'Outillage & Équipement'},
+  {id:uid(),libelle:'Groupe mono-split Janssens (revendu)',montant:640,date:'2026-05-10',categorie:'Matériel revendu'},
+  {id:uid(),libelle:'Plein carburant camionnette',montant:95,date:'2026-06-01',categorie:'Déplacements'},
+  {id:uid(),libelle:'Assurance RC pro (trimestre)',montant:120,date:'2026-06-15',categorie:'Fonctionnement'},
+  {id:uid(),libelle:'Détecteur de fuite électronique',montant:210,date:'2026-06-22',categorie:'Outillage & Équipement'}
+ ],
+ devis:{materiel:[],coeff:1.25,heures:'',tarif:60,deplacement:40},
+ settings:{tauxProvision:55}
+};
+
+/* ============ State ============ */
+var KEY='boreas_state_v2';
+var state=(function(){
+ try{var s=JSON.parse(localStorage.getItem(KEY));if(s&&s.chantiers)return s;}catch(e){}
+ // migration depuis l'ancienne version si présente
+ try{
+  var oc=JSON.parse(localStorage.getItem('boreas_chantiers'));
+  var of=JSON.parse(localStorage.getItem('boreas_frais'));
+  if(oc||of)return{chantiers:oc||SEED.chantiers,frais:of||SEED.frais,devis:SEED.devis,settings:SEED.settings};
+ }catch(e){}
+ return JSON.parse(JSON.stringify(SEED));
+})();
+if(!state.settings)state.settings={tauxProvision:55};
+if(!state.devis)state.devis=SEED.devis;
+/* Migration : l'ancien champ unique "prixAchat" devient une liste de matériel détaillée.
+   Fonction réutilisable (appelée au démarrage ET après un import de sauvegarde,
+   pour ne pas perdre les données d'un fichier exporté avant cette évolution). */
+function migrateDevis(d){
+ if(!d)d={materiel:[],coeff:1.25,heures:'',tarif:60,deplacement:40};
+ if(!d.materiel){
+  var legacyPrix=Number(d.prixAchat)||0;
+  d.materiel=legacyPrix?[{id:uid(),libelle:'Matériel',prix:legacyPrix}]:[];
+  delete d.prixAchat;
+ }
+ return d;
+}
+var neededMigration=!state.devis.materiel;
+state.devis=migrateDevis(state.devis);
+if(neededMigration)persist(true);
+if(!state.settings.deduc)state.settings.deduc={};
+CATEGORIES.forEach(function(c){ if(state.settings.deduc[c.key]==null) state.settings.deduc[c.key]=c.deduc; });
+function deducOf(k){ var v=(state.settings.deduc||{})[k]; if(v==null)v=catMeta(k).deduc; v=Number(v); if(isNaN(v))v=100; return Math.max(0,Math.min(100,v)); }
+function persist(keepTs){ if(!keepTs){ state.updatedAt=Date.now(); scheduleAutoSync(); } try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){} }
+if(!state.updatedAt){ state.updatedAt=Date.now(); persist(true); }
+function effectiveClientId(){ return (state.settings.driveClientId||'').trim() || DRIVE_CLIENT_ID; }
+
+/* Demande au navigateur de ne pas effacer les données sous pression de stockage
+   (Safari/Chrome peuvent sinon vider localStorage/IndexedDB d'un site peu visité) */
+try{
+ if(navigator.storage&&navigator.storage.persist){
+  navigator.storage.persisted().then(function(already){
+   if(!already)navigator.storage.persist();
+  });
+ }
+}catch(e){}
+
+/* ============ Justificatifs : IndexedDB ============ */
+var DB=null, DBERR=false;
+function idbOpen(cb){
+ if(DB)return cb(DB); if(DBERR||!window.indexedDB)return cb(null);
+ try{
+  var r=indexedDB.open('boreas_db',2);
+  r.onupgradeneeded=function(e){var db=e.target.result; if(!db.objectStoreNames.contains('receipts'))db.createObjectStore('receipts',{keyPath:'id'}); if(!db.objectStoreNames.contains('cphotos'))db.createObjectStore('cphotos',{keyPath:'id'});};
+  r.onsuccess=function(e){DB=e.target.result;cb(DB);};
+  r.onerror=function(){DBERR=true;cb(null);};
+ }catch(e){DBERR=true;cb(null);}
+}
+function idbPut(rec,cb){idbOpen(function(db){if(!db)return cb&&cb(false);try{var t=db.transaction('receipts','readwrite');t.objectStore('receipts').put(rec);t.oncomplete=function(){cb&&cb(true);};t.onerror=function(){cb&&cb(false);};}catch(e){cb&&cb(false);}});}
+function idbGet(id,cb){idbOpen(function(db){if(!db)return cb(null);try{var r=db.transaction('receipts').objectStore('receipts').get(id);r.onsuccess=function(){cb(r.result||null);};r.onerror=function(){cb(null);};}catch(e){cb(null);}});}
+function idbDel(id,cb){idbOpen(function(db){if(!db)return cb&&cb(false);try{var t=db.transaction('receipts','readwrite');t.objectStore('receipts').delete(id);t.oncomplete=function(){cb&&cb(true);};t.onerror=function(){cb&&cb(false);};}catch(e){cb&&cb(false);}});}
+function idbKeys(cb){idbOpen(function(db){if(!db)return cb([]);try{var r=db.transaction('receipts').objectStore('receipts').getAllKeys();r.onsuccess=function(){cb(r.result||[]);};r.onerror=function(){cb([]);};}catch(e){cb([]);}});}
+/* Même mécanique pour les photos de chantiers (magasin séparé : plusieurs photos possibles par chantier) */
+function idbPutC(rec,cb){idbOpen(function(db){if(!db)return cb&&cb(false);try{var t=db.transaction('cphotos','readwrite');t.objectStore('cphotos').put(rec);t.oncomplete=function(){cb&&cb(true);};t.onerror=function(){cb&&cb(false);};}catch(e){cb&&cb(false);}});}
+function idbGetC(id,cb){idbOpen(function(db){if(!db)return cb(null);try{var r=db.transaction('cphotos').objectStore('cphotos').get(id);r.onsuccess=function(){cb(r.result||null);};r.onerror=function(){cb(null);};}catch(e){cb(null);}});}
+function idbDelC(id,cb){idbOpen(function(db){if(!db)return cb&&cb(false);try{var t=db.transaction('cphotos','readwrite');t.objectStore('cphotos').delete(id);t.oncomplete=function(){cb&&cb(true);};t.onerror=function(){cb&&cb(false);};}catch(e){cb&&cb(false);}});}
+function idbKeysC(cb){idbOpen(function(db){if(!db)return cb([]);try{var r=db.transaction('cphotos').objectStore('cphotos').getAllKeys();r.onsuccess=function(){cb(r.result||[]);};r.onerror=function(){cb([]);};}catch(e){cb([]);}});}
+
+var receiptIds={};                       // { fraisId: true } — quels frais ont un ticket
+var receiptDrive={};                     // { fraisId: {id,link} } — statut Drive connu
+idbKeys(function(keys){keys.forEach(function(k){receiptIds[k]=true;}); if(ui&&ui.tab==='frais')render();});
+var cphotoUrls={};                       // { photoId: objectURL } — cache d'affichage en mémoire
+var cphotoIds={};                        // { photoId: true } — quelles photos de chantier existent déjà localement
+idbKeysC(function(keys){keys.forEach(function(k){cphotoIds[k]=true;});});
+
+/* Compression via canvas (max 1400px, JPEG 0.7) */
+function compressImage(file,cb){
+ try{
+  var img=new Image(), url=URL.createObjectURL(file);
+  img.onload=function(){
+   var max=1400,w=img.width,h=img.height;
+   if(w>h&&w>max){h=Math.round(h*max/w);w=max;} else if(h>=w&&h>max){w=Math.round(w*max/h);h=max;}
+   var cv=document.createElement('canvas');cv.width=w;cv.height=h;
+   cv.getContext('2d').drawImage(img,0,0,w,h);
+   URL.revokeObjectURL(url);
+   cv.toBlob(function(b){cb(b);}, 'image/jpeg', 0.7);
+  };
+  img.onerror=function(){URL.revokeObjectURL(url);cb(null);};
+  img.src=url;
+ }catch(e){cb(null);}
+}
+
+/* ============ Google Drive (surcouche optionnelle, chargée à la demande) ============ */
+function loadScript(src,cb){
+ if(document.querySelector('script[src="'+src+'"]'))return cb(true);
+ var s=document.createElement('script');s.src=src;s.async=true;
+ s.onload=function(){cb(true);};s.onerror=function(){cb(false);};
+ document.head.appendChild(s);
+}
+var driveTok=null, driveTokExp=0;
+function driveToken(clientId,cb,silent){
+ if(driveTok&&Date.now()<driveTokExp-60000)return cb(driveTok);
+ loadScript('https://accounts.google.com/gsi/client',function(ok){
+  if(!ok||!window.google||!google.accounts||!google.accounts.oauth2)return cb(null,'Librairie Google inaccessible (hors-ligne ?)');
+  try{
+   var tc=google.accounts.oauth2.initTokenClient({
+    client_id:clientId,
+    scope:'https://www.googleapis.com/auth/drive.file',
+    callback:function(resp){ if(resp&&resp.access_token){ driveTok=resp.access_token; driveTokExp=Date.now()+(Number(resp.expires_in||3600)*1000); cb(driveTok);} else cb(null,(resp&&resp.error)||'Autorisation refusée'); },
+    error_callback:function(e){ cb(null,(e&&e.type)||'consentement requis'); }
+   });
+   tc.requestAccessToken(silent?{prompt:''}:{});
+  }catch(e){cb(null,e.message);}
+ });
+}
+function driveUploadBlob(token,blob,name,parentId,cb){
+ try{
+  var meta={name:name,mimeType:'image/jpeg'}; if(parentId)meta.parents=[parentId];
+  var fd=new FormData();
+  fd.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
+  fd.append('file',blob);
+  fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',{
+   method:'POST',headers:{Authorization:'Bearer '+token},body:fd
+  }).then(function(r){return r.json();}).then(function(j){cb(j);}).catch(function(e){cb(null,e.message);});
+ }catch(e){cb(null,e.message);}
+}
+/* Dossier "boreas" dédié (créé par l'app, accessible via scope drive.file) */
+function driveEnsureFolder(token,cb){
+ var q="name='boreas' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+ fetch('https://www.googleapis.com/drive/v3/files?spaces=drive&fields='+encodeURIComponent('files(id)')+'&q='+encodeURIComponent(q),{headers:{Authorization:'Bearer '+token}})
+  .then(function(r){return r.json();}).then(function(j){
+   if(j&&j.files&&j.files[0])return cb(j.files[0].id);
+   fetch('https://www.googleapis.com/drive/v3/files?fields=id',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({name:'boreas',mimeType:'application/vnd.google-apps.folder'})})
+    .then(function(r){return r.json();}).then(function(j2){cb(j2&&j2.id);}).catch(function(){cb(null);});
+  }).catch(function(){cb(null);});
+}
+var pendingBlob=null;                     // ticket capturé mais frais pas encore enregistré
+var currentReceipt=null;                  // id du ticket ouvert dans la modale
+var currentCPhoto=null;                   // id de la photo de chantier ouverte dans la modale
+
+/* ============ Photos de chantier (plusieurs photos par chantier, sauvegarde immédiate) ============ */
+function chantierById(id){ for(var i=0;i<state.chantiers.length;i++)if(state.chantiers[i].id===id)return state.chantiers[i]; return null; }
+function renderChantierPhotos(){
+ var box=$('c_photos'); if(!box)return;
+ var c=chantierById(ui.editingChantierId); if(!c){box.innerHTML='';return;}
+ var ids=c.photos||[];
+ if(!ids.length){ box.innerHTML='<p class="muted2" style="font-size:11px">Aucune photo pour ce chantier.</p>'; return; }
+ box.innerHTML=ids.map(function(id){
+   var url=cphotoUrls[id];
+   if(url)return '<div class="thumb"><img src="'+url+'" onclick="B.viewChantierPhoto(\''+id+'\')"/><div class="del" onclick="B.delChantierPhoto(\''+id+'\')">'+ico('x',14)+'</div></div>';
+   idbGetC(id,function(rec){
+     if(rec&&rec.blob){ cphotoUrls[id]=URL.createObjectURL(rec.blob); renderChantierPhotos(); }
+   });
+   return '<div class="thumb" style="width:88px;height:88px;display:flex;align-items:center;justify-content:center"><span class="muted2" style="font-size:10px">…</span></div>';
+ }).join('');
+}
+function addChantierPhotoBlob(blob){
+ var c=chantierById(ui.editingChantierId); if(!c||!blob)return;
+ var id=uid();
+ idbPutC({id:id,chantierId:c.id,blob:blob,drive:null},function(ok){
+   if(!ok){ toast('Impossible d\'enregistrer la photo.'); return; }
+   c.photos=(c.photos||[]).concat([id]); persist(); renderChantierPhotos();
+ });
+}
+
+/* ---- Synchronisation complète des données (newest-wins) ---- */
+function backupObj(map,cmap){ return {updatedAt:state.updatedAt,chantiers:state.chantiers,frais:state.frais,devis:state.devis,settings:{tauxProvision:state.settings.tauxProvision,deduc:state.settings.deduc,companyName:state.settings.companyName},receipts:map||{},cphotos:cmap||{}}; }
+/* Construit la table fraisId -> idDriveDuTicket depuis IndexedDB */
+function gatherReceipts(cb){
+ idbKeys(function(keys){
+  var todo=keys.slice(), map={};
+  (function next(){ if(!todo.length)return cb(map); var id=todo.shift(); idbGet(id,function(rec){ if(rec&&rec.drive&&rec.drive.id)map[id]=rec.drive.id; next(); }); })();
+ });
+}
+/* Idem pour les photos de chantiers */
+function gatherCPhotos(cb){
+ idbKeysC(function(keys){
+  var todo=keys.slice(), map={};
+  (function next(){ if(!todo.length)return cb(map); var id=todo.shift(); idbGetC(id,function(rec){ if(rec&&rec.drive&&rec.drive.id)map[id]=rec.drive.id; next(); }); })();
+ });
+}
+/* Télécharge depuis Drive les tickets absents localement (restauration nouvel appareil) */
+function driveDownloadFile(token,fileId,cb){
+ fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',{headers:{Authorization:'Bearer '+token}})
+  .then(function(r){return r.blob();}).then(function(b){cb(b);}).catch(function(){cb(null);});
+}
+function downloadMissingPhotos(token,map,cb){
+ if(!map)return cb(0);
+ var ids=Object.keys(map), n=0;
+ (function next(){
+  if(!ids.length)return cb(n);
+  var fid=ids.shift(), drvId=map[fid];
+  if(receiptIds[fid]||!drvId)return next();
+  driveDownloadFile(token,drvId,function(blob){
+   if(!blob)return next();
+   idbPut({id:fid,blob:blob,drive:{id:drvId,link:''}},function(ok){ if(ok){receiptIds[fid]=true;receiptDrive[fid]={id:drvId,link:''};n++;} next(); });
+  });
+ })();
+}
+/* Idem pour les photos de chantiers manquantes localement */
+function downloadMissingCPhotos(token,map,cb){
+ if(!map)return cb(0);
+ var ids=Object.keys(map), n=0;
+ (function next(){
+  if(!ids.length)return cb(n);
+  var pid=ids.shift(), drvId=map[pid];
+  if(cphotoIds[pid]||!drvId)return next();
+  driveDownloadFile(token,drvId,function(blob){
+   if(!blob)return next();
+   idbPutC({id:pid,blob:blob,drive:{id:drvId,link:''}},function(ok){ if(ok){cphotoIds[pid]=true;n++;} next(); });
+  });
+ })();
+}
+function applyRemote(r){
+ if(r.chantiers)state.chantiers=r.chantiers;
+ if(r.frais)state.frais=r.frais;
+ if(r.devis)state.devis=r.devis;
+ if(r.settings){ if(r.settings.tauxProvision!=null)state.settings.tauxProvision=r.settings.tauxProvision; if(r.settings.deduc)state.settings.deduc=r.settings.deduc; if(r.settings.companyName!=null)state.settings.companyName=r.settings.companyName; }
+ state.updatedAt=r.updatedAt||Date.now();
+ persist(true);
+}
+function driveFindBackup(token,folderId,cb){
+ fetch('https://www.googleapis.com/drive/v3/files?spaces=drive&fields='+encodeURIComponent('files(id,parents)')+'&q='+encodeURIComponent("name='boreas-backup.json' and trashed=false"),{headers:{Authorization:'Bearer '+token}})
+  .then(function(r){return r.json();}).then(function(j){
+   var f=j&&j.files&&j.files[0]; if(!f)return cb(null);
+   if(f.parents&&f.parents.indexOf(folderId)>-1)return cb(f.id);
+   var rem=(f.parents||[]).join(',');           // sauvegarde héritée à la racine : la déplacer dans /boreas
+   fetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?addParents='+folderId+(rem?'&removeParents='+rem:'')+'&fields=id',{method:'PATCH',headers:{Authorization:'Bearer '+token}})
+    .then(function(){cb(f.id);}).catch(function(){cb(f.id);});
+  }).catch(function(){cb(null);});
+}
+function driveDownloadBackup(token,id,cb){
+ fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media',{headers:{Authorization:'Bearer '+token}})
+  .then(function(r){return r.text();}).then(function(t){ try{cb(JSON.parse(t));}catch(e){cb(false);} }).catch(function(){cb(false);});
+}
+function driveCreateBackup(token,folderId,payload,cb){
+ try{
+  var meta={name:'boreas-backup.json',mimeType:'application/json'}; if(folderId)meta.parents=[folderId];
+  var fd=new FormData();
+  fd.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
+  fd.append('file',new Blob([JSON.stringify(payload)],{type:'application/json'}));
+  fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:'Bearer '+token},body:fd})
+   .then(function(r){return r.json();}).then(function(j){cb(j&&j.id);}).catch(function(){cb(null);});
+ }catch(e){cb(null);}
+}
+/* Pousse vers /boreas les tickets pas encore sauvegardés sur Drive */
+function drivePushPhotos(token,folderId,cb){
+ idbKeys(function(keys){
+  var todo=keys.slice(), n=0;
+  (function next(){
+   if(!todo.length)return cb(n);
+   var id=todo.shift();
+   idbGet(id,function(rec){
+    if(!rec||!rec.blob||(rec.drive&&rec.drive.id))return next();
+    driveUploadBlob(token,rec.blob,'ticket-'+id+'.jpg',folderId,function(j){
+     if(j&&j.id){ rec.drive={id:j.id,link:j.webViewLink||''}; idbPut(rec,function(){ receiptDrive[id]=rec.drive; n++; next(); }); }
+     else next();
+    });
+   });
+  })();
+ });
+}
+/* Idem pour les photos de chantiers pas encore sauvegardées sur Drive */
+function drivePushCPhotos(token,folderId,cb){
+ idbKeysC(function(keys){
+  var todo=keys.slice(), n=0;
+  (function next(){
+   if(!todo.length)return cb(n);
+   var id=todo.shift();
+   idbGetC(id,function(rec){
+    if(!rec||!rec.blob||(rec.drive&&rec.drive.id))return next();
+    driveUploadBlob(token,rec.blob,'chantier-'+id+'.jpg',folderId,function(j){
+     if(j&&j.id){ rec.drive={id:j.id,link:j.webViewLink||''}; idbPutC(rec,function(){ n++; next(); }); }
+     else next();
+    });
+   });
+  })();
+ });
+}
+function driveUpdateBackup(token,id,payload,cb){
+ fetch('https://www.googleapis.com/upload/drive/v3/files/'+id+'?uploadType=media',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload)})
+  .then(function(r){return r.json();}).then(function(){cb(true);}).catch(function(){cb(false);});
+}
+function driveSync(silent,cb){
+ var cid=effectiveClientId(); if(!cid)return cb('noconfig');
+ if(!navigator.onLine)return cb('offline');
+ driveToken(cid,function(token,err){
+  if(!token)return cb(silent?'needauth':(err||'auth'));
+  driveEnsureFolder(token,function(folderId){
+   if(!folderId)return cb('folder');
+   state.settings.driveFolderId=folderId; persist(true);
+   /* Envoie les photos locales manquantes (tickets + photos de chantiers) puis (ré)écrit le backup */
+   var pushAndWrite=function(fid,action){
+    drivePushPhotos(token,folderId,function(nUp){
+     drivePushCPhotos(token,folderId,function(nUpC){
+      gatherReceipts(function(map){
+       gatherCPhotos(function(cmap){
+        var payload=backupObj(map,cmap), tot=nUp+nUpC;
+        if(fid){ driveUpdateBackup(token,fid,payload,function(ok){ if(!ok)return cb('update'); state.settings.driveBackupId=fid; persist(true); cb(null,action,tot,0); }); }
+        else { driveCreateBackup(token,folderId,payload,function(id){ if(!id)return cb('create'); state.settings.driveBackupId=id; persist(true); cb(null,action,tot,0); }); }
+       });
+      });
+     });
+    });
+   };
+   driveFindBackup(token,folderId,function(fid){
+    if(!fid){ pushAndWrite(null,'uploaded'); return; }
+    state.settings.driveBackupId=fid;
+    driveDownloadBackup(token,fid,function(remote){
+     if(remote===false)return cb('download');
+     var lt=state.updatedAt||0, rt=(remote&&remote.updatedAt)||0;
+     if(rt>lt){
+       applyRemote(remote);
+       downloadMissingPhotos(token,remote.receipts,function(nDown){
+        downloadMissingCPhotos(token,remote.cphotos,function(nDownC){
+         drivePushPhotos(token,folderId,function(nUp){        // photos locales éventuelles, sans écraser les données distantes
+          drivePushCPhotos(token,folderId,function(nUpC){
+           var tot=nUp+nUpC, totDown=nDown+nDownC;
+           if(tot>0){ gatherReceipts(function(map){ gatherCPhotos(function(cmap){ driveUpdateBackup(token,fid,backupObj(map,cmap),function(){ cb(null,'pulled',tot,totDown); }); }); }); }
+           else cb(null,'pulled',0,totDown);
+          });
+         });
+        });
+       });
+     }
+     else if(lt>rt){ pushAndWrite(fid,'pushed'); }
+     else { // à jour : pousser d'éventuelles photos locales non sauvegardées
+       drivePushPhotos(token,folderId,function(nUp){
+        drivePushCPhotos(token,folderId,function(nUpC){
+         var tot=nUp+nUpC;
+         if(tot>0){ gatherReceipts(function(map){ gatherCPhotos(function(cmap){ driveUpdateBackup(token,fid,backupObj(map,cmap),function(){ cb(null,'insync',tot,0); }); }); }); }
+         else cb(null,'insync',0,0);
+        });
+       });
+     }
+    });
+   });
+  });
+ },silent);
+}
+function syncStatusText(){ var t=state.settings.lastSync; return t?('Dernière synchro : '+new Date(t).toLocaleString('fr-BE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})):'Jamais synchronisé sur cet appareil.'; }
+function toast(msg){ var el=$('toast'); if(!el)return; el.innerHTML='<div class="t">'+esc(msg)+'</div>'; var t=el.firstChild; requestAnimationFrame(function(){t.classList.add('show');}); setTimeout(function(){if(t)t.classList.remove('show');},2800); }
+/* Auto-synchro silencieuse, anti-rebond après chaque modif de données */
+var autoTimer=null, syncBusy=false;
+function scheduleAutoSync(){ if(!effectiveClientId()||!navigator.onLine)return; clearTimeout(autoTimer); autoTimer=setTimeout(function(){ if(window.B)B.syncNow(true); }, 3500); }
+/* Filets de sécurité supplémentaires : on retente une synchro silencieuse dès que possible,
+   pas seulement sur un minuteur après modification (ex : réseau coupé pendant la saisie,
+   app remise au premier plan après un moment, retour en ligne). */
+window.addEventListener('online',function(){ if(window.B)setTimeout(function(){B.syncNow(true);},500); });
+document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden'&&window.B)B.syncNow(true); });
+window.addEventListener('pagehide',function(){ if(window.B)B.syncNow(true); });
+
+/* ============ Sauvegarde locale complète (fichier .json, indépendante de Drive) ============ */
+/* Convertit un Blob en base64 (pour embarquer les photos de tickets dans le fichier de sauvegarde) */
+function blobToB64(blob,cb){
+ try{
+  var r=new FileReader();
+  r.onload=function(){ cb(String(r.result).split(',')[1]||null); };
+  r.onerror=function(){ cb(null); };
+  r.readAsDataURL(blob);
+ }catch(e){cb(null);}
+}
+function b64ToBlob(b64,type,cb){
+ try{
+  var bin=atob(b64), arr=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+  cb(new Blob([arr],{type:type||'image/jpeg'}));
+ }catch(e){cb(null);}
+}
+/* Récupère TOUS les tickets locaux (blob -> base64) pour les inclure dans l'archive */
+function gatherReceiptsB64(cb){
+ idbKeys(function(keys){
+  var todo=keys.slice(), out={};
+  (function next(){
+   if(!todo.length)return cb(out);
+   var id=todo.shift();
+   idbGet(id,function(rec){
+    if(!rec||!rec.blob)return next();
+    blobToB64(rec.blob,function(b64){ if(b64)out[id]={b64:b64,drive:rec.drive||null}; next(); });
+   });
+  })();
+ });
+}
+/* Idem pour les photos de chantiers */
+function gatherCPhotosB64(cb){
+ idbKeysC(function(keys){
+  var todo=keys.slice(), out={};
+  (function next(){
+   if(!todo.length)return cb(out);
+   var id=todo.shift();
+   idbGetC(id,function(rec){
+    if(!rec||!rec.blob)return next();
+    blobToB64(rec.blob,function(b64){ if(b64)out[id]={b64:b64,chantierId:rec.chantierId||null,drive:rec.drive||null}; next(); });
+   });
+  })();
+ });
+}
+function fullBackupBuild(cb){
+ gatherReceiptsB64(function(receipts){
+  gatherCPhotosB64(function(cphotos){
+   cb({
+    app:'boreas', version:3, exportedAt:Date.now(),
+    updatedAt:state.updatedAt,
+    chantiers:state.chantiers, frais:state.frais, devis:state.devis,
+    settings:{
+     companyName:state.settings.companyName, tauxProvision:state.settings.tauxProvision,
+     deduc:state.settings.deduc, driveClientId:state.settings.driveClientId
+    },
+    receipts:receipts, cphotos:cphotos
+   });
+  });
+ });
+}
+function exportFullBackup(silent){
+ fullBackupBuild(function(data){
+  try{
+   var blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+   var name='boreas-sauvegarde-'+todayISO()+'.json';
+   var file=new File([blob],name,{type:'application/json'});
+   state.settings.lastLocalBackup=Date.now(); persist(true);
+   var s=$('backupStatus'); if(s)s.textContent=backupStatusText();
+   if(!silent&&navigator.canShare&&navigator.canShare({files:[file]})&&navigator.share){
+    navigator.share({files:[file],title:'Sauvegarde Boreas',text:'Sauvegarde complète du '+frDate(todayISO())}).catch(function(){});
+   } else {
+    downloadBlob(blob,name);
+    if(!silent)toast('Sauvegarde téléchargée. Range-la dans un dossier sûr (Fichiers/Drive/iCloud).');
+   }
+  }catch(e){ if(!silent)alert('Sauvegarde impossible : '+e.message); }
+ });
+}
+function importFullBackup(file){
+ if(!file)return;
+ if(!confirm('Importer cette sauvegarde va REMPLACER toutes les données actuelles de l\'appli sur cet appareil (chantiers, frais, devis, photos, tickets). Continuer ?'))return;
+ var reader=new FileReader();
+ reader.onload=function(){
+  var data; try{data=JSON.parse(String(reader.result));}catch(e){ alert('Fichier invalide ou corrompu.'); return; }
+  if(!data||data.app!=='boreas'){ alert('Ce fichier ne semble pas être une sauvegarde Boreas.'); return; }
+  state.chantiers=data.chantiers||[];
+  state.frais=data.frais||[];
+  state.devis=migrateDevis(data.devis||SEED.devis);
+  state.settings=state.settings||{};
+  if(data.settings){
+   state.settings.companyName=data.settings.companyName||'';
+   state.settings.tauxProvision=data.settings.tauxProvision!=null?data.settings.tauxProvision:55;
+   state.settings.deduc=data.settings.deduc||{};
+   if(data.settings.driveClientId)state.settings.driveClientId=data.settings.driveClientId;
+  }
+  state.updatedAt=data.updatedAt||Date.now();
+  persist(true);
+  var rIds=Object.keys(data.receipts||{});
+  var restoreReceipts=function(cb2){
+   var todo=rIds.slice(), done=0;
+   (function next(){
+    if(!todo.length)return cb2(done);
+    var id=todo.shift(), rec=data.receipts[id];
+    b64ToBlob(rec.b64,'image/jpeg',function(blob){
+     if(!blob)return next();
+     idbPut({id:id,blob:blob,drive:rec.drive||null},function(ok){ if(ok){receiptIds[id]=true; if(rec.drive)receiptDrive[id]=rec.drive; done++;} next(); });
+    });
+   })();
+  };
+  var cIds=Object.keys(data.cphotos||{});
+  var restoreCPhotos=function(cb2){
+   var todo=cIds.slice(), done=0;
+   (function next(){
+    if(!todo.length)return cb2(done);
+    var id=todo.shift(), rec=data.cphotos[id];
+    b64ToBlob(rec.b64,'image/jpeg',function(blob){
+     if(!blob)return next();
+     idbPutC({id:id,chantierId:rec.chantierId||null,blob:blob,drive:rec.drive||null},function(ok){ if(ok){cphotoIds[id]=true;done++;} next(); });
+    });
+   })();
+  };
+  restoreReceipts(function(nR){
+   restoreCPhotos(function(nC){
+    toast('Sauvegarde restaurée ('+(data.chantiers||[]).length+' chantiers, '+(data.frais||[]).length+' frais, '+nR+' tickets, '+nC+' photos).');
+    render();
+   });
+  });
+ };
+ reader.onerror=function(){ alert('Lecture du fichier impossible.'); };
+ reader.readAsText(file);
+}
+function backupStatusText(){
+ var l=state.settings.lastLocalBackup;
+ if(!l)return 'Aucune sauvegarde locale exportée sur cet appareil.';
+ return 'Dernière sauvegarde locale : '+new Date(l).toLocaleString('fr-BE',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+/* Âge (en jours) de la protection la plus récente : soit Drive, soit export local */
+function daysSinceLastProtection(){
+ var t=Math.max(state.settings.lastSync||0,state.settings.lastLocalBackup||0);
+ if(!t)return Infinity;
+ return Math.floor((Date.now()-t)/86400000);
+}
+
+/* ============ Génération PDF (sans dépendance externe) ============ */
+function euroPDF(n){ n=Math.round((Number(n)||0)*100)/100; var s=n.toFixed(2).replace('.',','); var p=s.split(','); p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,' '); return p.join(',')+' EUR'; }
+function pdfEsc(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)').replace(/[^\x00-\xFF]/g,function(c){return c==='€'?'EUR':(c==='’'||c==='‘')?"'":(c==='–'||c==='—')?'-':'?';}); }
+/* Palette reprise du thème de l'app (cyan/gris), adaptée pour un fond blanc imprimable */
+var PDFC={dark:[0.06,0.09,0.16],muted:[0.42,0.47,0.55],cyan:[0.031,0.569,0.698],light:[0.90,0.92,0.95],white:[1,1,1]};
+/* Moteur de mise en page : traite une liste d'éléments (text/row/itemrow/rule/totalbox)
+   du haut vers le bas de la page, en gérant couleurs, filets et blocs mis en évidence. */
+function makePDF(ops){
+ var y=800, cs='';
+ function col3(c){ return c[0].toFixed(3)+' '+c[1].toFixed(3)+' '+c[2].toFixed(3); }
+ function txt(x,yy,s,size,bold,color){ if(s==='')return; cs+=col3(color||PDFC.dark)+' rg\nBT /'+(bold?'F2':'F1')+' '+size+' Tf '+x.toFixed(1)+' '+yy.toFixed(1)+' Td ('+pdfEsc(s)+') Tj ET\n'; }
+ function rect(x,yy,w,h,color){ cs+=col3(color)+' rg\n'+x.toFixed(1)+' '+yy.toFixed(1)+' '+w.toFixed(1)+' '+h.toFixed(1)+' re f\n'; }
+ function rule(yy,color,lw){ cs+=col3(color||PDFC.light)+' RG\n'+(lw||1)+' w\n55 '+yy.toFixed(1)+' m 540 '+yy.toFixed(1)+' l S\n'; }
+ for(var i=0;i<ops.length;i++){
+  var o=ops[i], size=o.size||11;
+  if(o.gap)y-=o.gap;
+  if(o.type==='row'){
+   txt(60,y,o.left,size,o.bold,o.color); txt(o.valueX||420,y,o.right,size,o.bold,o.color);
+   y-=size*1.55;
+  } else if(o.type==='itemrow'){
+   if(o.shaded)rect(55,y-4,485,size*1.55+2,PDFC.light);
+   txt(65,y,o.left,size,false,PDFC.dark); txt(o.valueX||420,y,o.right,size,false,PDFC.dark);
+   y-=size*1.55;
+  } else if(o.type==='rule'){
+   rule(y+4,o.color,o.width); y-=6;
+  } else if(o.type==='totalbox'){
+   var h=size+16;
+   rect(55,y-8,485,h,o.color||PDFC.cyan);
+   txt(70,y,o.left,size,true,PDFC.white); txt(o.valueX||380,y,o.right,size,true,PDFC.white);
+   y-=h+8;
+  } else { // 'text' par défaut : simple ligne
+   txt(o.x||60,y,o.t,size,o.bold,o.color); y-=size*1.55;
+  }
+ }
+ var objs=[
+  '<< /Type /Catalog /Pages 2 0 R >>',
+  '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+  '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>',
+  '<< /Length '+cs.length+' >>\nstream\n'+cs+'endstream',
+  '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+  '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'
+ ];
+ var pdf='%PDF-1.4\n', off=[];
+ for(var k=0;k<objs.length;k++){ off.push(pdf.length); pdf+=(k+1)+' 0 obj\n'+objs[k]+'\nendobj\n'; }
+ var xref=pdf.length; pdf+='xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';
+ for(var x=0;x<off.length;x++){ var s=''+off[x]; while(s.length<10)s='0'+s; pdf+=s+' 00000 n \n'; }
+ pdf+='trailer\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+ var bytes=new Uint8Array(pdf.length); for(var b=0;b<pdf.length;b++)bytes[b]=pdf.charCodeAt(b)&0xff;
+ return new Blob([bytes],{type:'application/pdf'});
+}
+function downloadBlob(blob,name){ try{ var u=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(u);},1500); }catch(e){ alert('Téléchargement impossible : '+e.message); } }
+function sharePDF(blob,name,title,text){
+ try{ var file=new File([blob],name,{type:'application/pdf'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})&&navigator.share){ navigator.share({files:[file],title:title,text:text||''}).catch(function(){}); return; }
+ }catch(e){}
+ downloadBlob(blob,name); toast('PDF téléchargé (partage natif indisponible ici).');
+}
+
+var ui={tab:'dashboard',chantierForm:false,editingChantierId:null,chantierLignes:[],fraisForm:false,settings:false,driveAdv:false,filter:'tous',cStatut:'en_cours',fCat:CATEGORIES[0].key};
+
+/* ============ Finance ============ */
+function finance(){
+ var ca=state.chantiers.filter(function(c){return c.statut==='paye';}).reduce(function(s,c){return s+(Number(c.montant)||0);},0);
+ var fraisReel=state.frais.reduce(function(s,f){return s+(Number(f.montant)||0);},0);
+ var fraisDeduc=state.frais.reduce(function(s,f){return s+(Number(f.montant)||0)*(deducOf(f.categorie)/100);},0);
+ var benefice=ca-fraisDeduc;                 // bénéfice net fiscal (base imposable)
+ var taux=(Number(state.settings.tauxProvision)||0)/100;
+ var provision=benefice>0?benefice*taux:0;
+ var reste=ca-fraisReel-provision;           // trésorerie réelle en poche
+ return{ca:ca,frais:fraisReel,fraisReel:fraisReel,fraisDeduc:fraisDeduc,benefice:benefice,provision:provision,reste:reste,taux:state.settings.tauxProvision};
+}
+function tvaColor(ca){return ca>=23000?'var(--red)':ca>=18000?'var(--orange)':'var(--green)';}
+function tvaHex(ca){return ca>=23000?'#ef4444':ca>=18000?'#f59e0b':'#10b981';}
+function tvaLabel(ca){return ca>=23000?'Zone rouge':ca>=18000?'Vigilance':'Marge confortable';}
+
+/* ============ Views ============ */
+function statCard(icon,label,value,color,sub){
+ return '<div class="card pad stat"><div class="row" style="align-items:center;gap:8px;margin-bottom:8px">'
+ +'<div class="icobox" style="width:32px;height:32px;background:'+color+'22;color:'+color+'">'+ico(icon,17)+'</div>'
+ +'<span class="muted" style="font-size:12px" class="trunc">'+label+'</span></div>'
+ +'<div class="v" style="color:'+color+'">'+value+'</div>'
+ +(sub?'<div class="muted2" style="font-size:11px;margin-top:2px">'+sub+'</div>':'')+'</div>';
+}
+function gaugeSVG(ca){
+ var r=78,c=2*Math.PI*r,pct=Math.min(ca/TVA_LIMIT,1),col=tvaHex(ca);
+ return '<div style="position:relative;display:flex;align-items:center;justify-content:center;padding:6px 0">'
+ +'<svg width="200" height="200" viewBox="0 0 200 200" style="transform:rotate(-90deg)">'
+ +'<circle cx="100" cy="100" r="'+r+'" stroke="#22304a" stroke-width="16" fill="none"/>'
+ +'<circle cx="100" cy="100" r="'+r+'" stroke="'+col+'" stroke-width="16" fill="none" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+(c*(1-pct))+'"/></svg>'
+ +'<div style="position:absolute;display:flex;flex-direction:column;align-items:center">'
+ +'<span style="font-size:30px;font-weight:700;color:'+col+'">'+fmt(ca)+'</span>'
+ +'<span class="muted" style="font-size:14px;margin-top:2px">/ '+fmt(TVA_LIMIT)+'</span>'
+ +'<span class="chip" style="margin-top:8px;color:'+col+';background:'+col+'22">'+tvaLabel(ca)+'</span></div></div>';
+}
+
+function backupBanner(){
+ var d=daysSinceLastProtection();
+ if(d<=7)return '';
+ var never=d===Infinity;
+ return '<div class="card pad mb3" style="border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.06)">'
+ +'<div class="row" style="align-items:flex-start;gap:10px">'
+ +'<div class="icobox" style="width:34px;height:34px;background:rgba(245,158,11,.15);color:var(--orange);flex-shrink:0">'+ico('cloud',18)+'</div>'
+ +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">'+(never?'Aucune sauvegarde effectuée':'Sauvegarde ancienne ('+d+' jours)')+'</div>'
+ +'<p class="muted" style="font-size:12px;margin-top:2px">Exporte une sauvegarde locale ou synchronise ton Drive pour ne pas risquer de perdre tes données.</p>'
+ +'<button class="btn btn-primary" style="margin-top:10px;padding:9px 12px;font-size:12px" onclick="B.setTab(\'settings\')">Aller aux réglages</button></div></div></div>';
+}
+function viewDashboard(){
+ var f=finance();
+ return ''
+ +'<div class="between mb3"><div class="row" style="align-items:center;gap:8px">'
+ +'<div class="icobox" style="width:36px;height:36px;background:rgba(6,182,212,.15);color:var(--cyan)">'+ico('snow',20)+'</div>'
+ +'<div><h1 style="line-height:1.1">'+(state.settings.companyName?esc(state.settings.companyName):'Boreas Assistant')+'</h1><p class="muted" style="font-size:12px">Indépendant compl. · Franchise TVA</p></div></div></div>'
+ +backupBanner()
+ +'<div class="card pad mb3">'
+ +'<div class="between mb1"><span style="font-weight:600;font-size:14px">Plafond franchise TVA</span>'+ico('trend',16,'var(--muted2)')+'</div>'
+ +gaugeSVG(f.ca)
+ +'<div class="bar" style="margin-top:8px"><span style="width:'+Math.min(f.ca/TVA_LIMIT*100,100)+'%;background:'+tvaHex(f.ca)+'"></span></div>'
+ +'<p class="muted" style="font-size:12px;text-align:center;margin-top:8px">Reste avant plafond : <b style="color:var(--text)">'+fmt(Math.max(TVA_LIMIT-f.ca,0))+'</b></p></div>'
+ +'<div class="row mb3">'+statCard('coins','CA encaissé',fmt(f.ca),'#06b6d4')+statCard('receipt','Total frais',fmt(f.fraisReel),'#f472b6',f.fraisDeduc<f.fraisReel?'dont déduct. '+fmt(f.fraisDeduc):'')+'</div>'
+ +'<div class="row mb3">'+statCard('trend','Bénéfice net',fmt(f.benefice),f.benefice>=0?'#10b981':'#ef4444','Après déductibilité')+statCard('piggy','Provision '+f.taux+'%',fmt(f.provision),'#f59e0b','Impôts + cotis.')+'</div>'
+ +'<div class="card pad mb3" style="border-color:rgba(16,185,129,.4)"><div class="between">'
+ +'<div class="row" style="align-items:center;gap:10px"><div class="icobox" style="width:38px;height:38px;background:rgba(16,185,129,.15);color:var(--green)">'+ico('wallet',19)+'</div>'
+ +'<div><div class="muted" style="font-size:12px">Reste réellement en poche</div><div class="muted2" style="font-size:11px">CA − frais réels − provision</div></div></div>'
+ +'<div style="font-size:24px;font-weight:700;color:var(--green)">'+fmt(f.reste)+'</div></div></div>'
+ +'<div class="row">'
+ +'<button onclick="B.setTab(\'frais\')" class="card pop" style="flex:1;padding:16px;display:flex;flex-direction:column;align-items:center;gap:8px">'
+ +'<div class="icobox" style="width:42px;height:42px;background:rgba(244,114,182,.15);color:var(--pink)">'+ico('plus',22)+'</div><span style="font-size:14px;font-weight:600">Ajouter un frais</span></button>'
+ +'<button onclick="B.setTab(\'devis\')" class="card pop" style="flex:1;padding:16px;display:flex;flex-direction:column;align-items:center;gap:8px">'
+ +'<div class="icobox" style="width:42px;height:42px;background:rgba(6,182,212,.15);color:var(--cyan)">'+ico('calc',22)+'</div><span style="font-size:14px;font-weight:600">Créer un devis</span></button></div>';
+}
+
+/* Génère les lignes de facturation d'un chantier (libellé + montant) */
+function ligneRows(lignes){
+ if(!lignes.length)return '<p class="muted2" style="font-size:11px">Aucune ligne. Montant total à saisir manuellement ci-dessous.</p>';
+ return lignes.map(function(l){
+  return '<div class="row" style="margin-bottom:6px;align-items:center">'
+   +'<input class="input" id="cl_lib_'+l.id+'" value="'+esc(l.libelle)+'" placeholder="Ex: Pompe de relevage condensats" style="flex:2" oninput="B.onLigneInput(\''+l.id+'\')"/>'
+   +'<input class="input" id="cl_mt_'+l.id+'" type="number" inputmode="decimal" value="'+esc(l.montant)+'" placeholder="0" style="flex:1;text-align:right" oninput="B.onLigneInput(\''+l.id+'\')"/>'
+   +'<button class="btn btn-ghost" style="padding:10px;color:var(--red)" onclick="B.removeLigne(\''+l.id+'\')">'+ico('trash',15)+'</button></div>';
+ }).join('');
+}
+function ligneSum(lignes){ return lignes.reduce(function(s,l){return s+(Number(l.montant)||0);},0); }
+function viewChantiers(){
+ var list=state.chantiers.filter(function(c){return ui.filter==='tous'?true:c.statut===ui.filter;})
+   .slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
+ var editing=ui.editingChantierId?state.chantiers.filter(function(c){return c.id===ui.editingChantierId;})[0]:null;
+ var form=ui.chantierForm?(
+  '<div class="card pad mb3 pop">'
+  +(editing?'<div class="mb2" style="font-weight:600;font-size:13px;color:var(--cyan)">'+ico('edit',14,'var(--cyan)')+' Modification du chantier</div>':'')
+  +'<div class="field"><span class="label">Nom du client</span><input class="input" id="c_client" placeholder="Ex: Janssens" value="'+esc(editing?editing.client:'')+'"/></div>'
+  +'<div class="field"><span class="label">Description</span><input class="input" id="c_desc" placeholder="Ex: Installation mono-split" value="'+esc(editing?(editing.description||''):'')+'"/></div>'
+  +'<div class="field"><span class="label">Lignes de facturation (optionnel)</span>'
+  +'<div id="c_lignes">'+ligneRows(ui.chantierLignes)+'</div>'
+  +'<button class="btn btn-ghost" style="margin-top:6px;font-size:12px;padding:8px" onclick="B.addLigne()">'+ico('plus',15)+'Ajouter une ligne</button></div>'
+  +'<div class="field"><span class="label">Montant facturé (0% TVA)'+(ui.chantierLignes.length?' — calculé depuis les lignes ci-dessus':'')+'</span><input class="input" id="c_montant" type="number" inputmode="decimal" value="'+(ui.chantierLignes.length?ligneSum(ui.chantierLignes):(editing?esc(editing.montant):''))+'" placeholder="0"'+(ui.chantierLignes.length?' readonly style="opacity:.65"':'')+'/></div>'
+  +'<div class="field"><span class="label">Date</span><input class="input" id="c_date" type="date" value="'+(editing?editing.date:todayISO())+'"/></div>'
+  +'<div class="field"><span class="label">Statut</span><div class="grid2" id="c_stat">'
+  +'<button class="selbtn'+(ui.cStatut==='en_cours'?' active':'')+'" onclick="B.setCStatut(\'en_cours\')">'+ico('clock',16)+'En cours</button>'
+  +'<button class="selbtn'+(ui.cStatut==='paye'?' active':'')+'" onclick="B.setCStatut(\'paye\')">'+ico('check',16)+'Payé</button></div></div>'
+  +(editing?(
+    '<div class="field"><span class="label">Photos du chantier</span>'
+    +'<input type="file" id="cCapInput" accept="image/*" capture="environment" style="display:none" onchange="B.onChantierPhoto(this)"/>'
+    +'<input type="file" id="cUpInput" accept="image/*" multiple style="display:none" onchange="B.onChantierPhoto(this)"/>'
+    +'<div class="row">'
+    +'<button class="btn btn-ghost" style="flex:1" onclick="document.getElementById(\'cCapInput\').click()">'+ico('camera',18,'var(--cyan)')+'Prendre en photo</button>'
+    +'<button class="btn btn-ghost" style="flex:1" onclick="document.getElementById(\'cUpInput\').click()">'+ico('image',18,'var(--cyan)')+'Galerie</button></div>'
+    +'<div id="c_photos" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px"></div>'
+    +'<p class="muted2" style="font-size:10px;margin-top:6px">Chaque photo est enregistrée immédiatement sur cet appareil, indépendamment du bouton ci-dessous.</p></div>'
+   ):'')
+  +'<div class="row">'
+  +'<button class="btn btn-primary" style="flex:1" onclick="B.addChantier()">'+(editing?'Enregistrer les modifications':'Enregistrer le chantier')+'</button>'
+  +(editing?'<button class="btn btn-ghost" style="padding:13px 18px" onclick="B.cancelChantierForm()">Fermer</button>':'')
+  +'</div></div>'):'';
+ var rows=list.length?list.map(function(c){
+  var paid=c.statut==='paye', nph=(c.photos||[]).length, nl=(c.lignes||[]).length;
+  return '<div class="card listitem pop mb2"><div class="between" style="align-items:flex-start">'
+   +'<div style="flex:1;min-width:0;margin-right:10px"><div class="row" style="align-items:center;gap:8px">'
+   +'<span style="font-weight:600" class="trunc">'+esc(c.client)+'</span>'
+   +'<span class="chip" style="'+(paid?'background:rgba(16,185,129,.15);color:var(--green)':'background:rgba(245,158,11,.15);color:var(--orange)')+'">'+(paid?'Payé':'En cours')+'</span></div>'
+   +(c.description?'<p class="muted trunc" style="font-size:12px;margin-top:2px">'+esc(c.description)+'</p>':'')
+   +'<div class="row" style="align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap"><p class="muted2" style="font-size:11px">'+frDate(c.date)+'</p>'
+   +(nl?'<span class="muted2" style="font-size:11px">· '+nl+' ligne'+(nl>1?'s':'')+'</span>':'')
+   +(nph?'<span class="muted2" style="font-size:11px;display:flex;align-items:center;gap:2px">· '+ico('image',12)+nph+'</span>':'')+'</div></div>'
+   +'<div style="font-weight:700;color:var(--cyan);white-space:nowrap">'+fmt(c.montant)+'</div></div>'
+   +'<div class="row" style="margin-top:12px">'
+   +'<button class="btn btn-ghost" style="flex:1;font-size:12px;padding:9px" onclick="B.toggleChantier(\''+c.id+'\')">'+ico(paid?'clock':'check',14)+(paid?'Repasser en cours':'Marquer payé')+'</button>'
+   +'<button class="btn btn-ghost" style="padding:9px 12px" onclick="B.editChantier(\''+c.id+'\')">'+ico('edit',15)+'</button>'
+   +'<button class="btn btn-ghost" style="padding:9px 14px;color:var(--red)" onclick="B.delChantier(\''+c.id+'\')">'+ico('trash',15)+'</button></div></div>';
+ }).join(''):'<p class="muted2" style="text-align:center;font-size:14px;padding:32px 0">Aucun chantier ici.</p>';
+ return '<div class="between mb2"><h1>Chantiers</h1>'
+  +'<button class="btn btn-primary" style="padding:9px 14px;font-size:13px" onclick="B.toggleForm(\'chantier\')">'+ico(ui.chantierForm?'x':'plus',18)+(ui.chantierForm?'Fermer':'Ajouter')+'</button></div>'
+  +form
+  +'<div class="seg mb3">'
+  +['tous|Tous','en_cours|En cours','paye|Payé'].map(function(t){var p=t.split('|');return '<button class="'+(ui.filter===p[0]?'active':'')+'" onclick="B.setFilter(\''+p[0]+'\')">'+p[1]+'</button>';}).join('')
+  +'</div>'+rows;
+}
+
+/* Génère les lignes d'articles matériel du devis (libellé + prix d'achat unitaire) */
+function matRows(mat){
+ if(!mat.length)return '<p class="muted2" style="font-size:11px">Aucun article. Ajoute au moins une ligne de matériel.</p>';
+ return mat.map(function(m){
+  return '<div class="row" style="margin-bottom:6px;align-items:center">'
+   +'<input class="input" id="dm_lib_'+m.id+'" value="'+esc(m.libelle)+'" placeholder="Ex: Unité intérieure" style="flex:2" oninput="B.calc()"/>'
+   +'<input class="input" id="dm_prix_'+m.id+'" type="number" inputmode="decimal" value="'+esc(m.prix)+'" placeholder="0" style="flex:1;text-align:right" oninput="B.calc()"/>'
+   +'<button class="btn btn-ghost" style="padding:10px;color:var(--red)" onclick="B.removeDevisMat(\''+m.id+'\')">'+ico('trash',15)+'</button></div>';
+ }).join('');
+}
+function viewDevis(){
+ var d=state.devis, mat=d.materiel||[];
+ return '<h1 class="mb1">Outil devis</h1><p class="muted mb3" style="font-size:12px">Chiffrage rapide face au client · 0% TVA</p>'
+ +'<div class="card pad mb3">'
+ +'<div class="field"><span class="label">Nom du client (optionnel)</span><input class="input" id="d_client" placeholder="Ex: Villa Lecomte"/></div>'
+ +'<div class="field"><span class="label">Coefficient de marge matériel</span><div class="row" style="align-items:center">'
+ +'<input type="range" id="d_coeffR" min="1" max="2" step="0.05" value="'+d.coeff+'" oninput="B.syncCoeff(this.value)" style="flex:1"/>'
+ +'<input class="input" id="d_coeff" type="number" step="0.05" value="'+d.coeff+'" oninput="B.syncCoeff(this.value)" style="width:88px;text-align:center"/></div>'
+ +'<span class="muted2" style="font-size:11px;margin-top:4px;display:block" id="d_margeLbl">Marge : +'+Math.round((Number(d.coeff)-1)*100)+'%</span></div>'
+ +'<div class="field"><span class="label">Matériel (prix d\'achat unitaire HTVA, grossiste)</span>'
+ +'<div id="d_mat">'+matRows(mat)+'</div>'
+ +'<button class="btn btn-ghost" style="margin-top:6px;font-size:12px;padding:8px" onclick="B.addDevisMat()">'+ico('plus',15)+'Ajouter un article</button></div>'
+ +'<div class="row"><div class="field" style="flex:1"><span class="label">Heures MO</span><input class="input" id="d_heures" type="number" inputmode="decimal" value="'+esc(d.heures)+'" oninput="B.calc()" placeholder="0"/></div>'
+ +'<div class="field" style="flex:1"><span class="label">Tarif horaire (€)</span><input class="input" id="d_tarif" type="number" inputmode="decimal" value="'+esc(d.tarif)+'" oninput="B.calc()"/></div></div>'
+ +'<div class="field"><span class="label">Forfait déplacement (€)</span><input class="input" id="d_depl" type="number" inputmode="decimal" value="'+esc(d.deplacement)+'" oninput="B.calc()"/></div>'
+ +'<div class="field"><span class="label">Email client (optionnel)</span><input class="input" id="d_email" type="email" placeholder="client@email.be"/></div></div>'
+ +'<div class="card pad mb3" style="border-color:rgba(6,182,212,.4);background:rgba(6,182,212,.05)">'
+ +'<div class="between" style="padding:5px 0"><span class="muted">Matériel + marge</span><span id="r_mat">'+fmt2(0)+'</span></div>'
+ +'<div class="between" style="padding:5px 0"><span class="muted">Main-d\'œuvre</span><span id="r_mo">'+fmt2(0)+'</span></div>'
+ +'<div class="between" style="padding:5px 0"><span class="muted">Déplacement</span><span id="r_dep">'+fmt2(0)+'</span></div>'
+ +'<div style="border-top:1px solid var(--border);margin:8px 0"></div>'
+ +'<div class="between" style="align-items:flex-end"><div><div style="font-weight:600">Total à facturer</div><div class="muted2" style="font-size:11px">TVA non applicable (franchise)</div></div>'
+ +'<div style="font-size:30px;font-weight:700;color:var(--cyan)" id="r_total">'+fmt2(0)+'</div></div></div>'
+ +'<p class="muted2" style="font-size:11px;margin:-4px 0 12px">Le PDF détaille chaque article de matériel avec son prix de vente ; la main-d\'œuvre y apparaît en un seul montant global, sans détail du tarif horaire.</p>'
+ +'<button class="btn btn-ghost" style="width:100%;margin-bottom:8px" onclick="B.shareDevisPDF()">'+ico('send',18,'var(--cyan)')+'Partager le devis (PDF)</button>'
+ +'<button class="btn btn-primary" style="width:100%" onclick="B.convertDevis()">'+ico('arrow',19)+'Convertir en chantier</button>';
+}
+
+function viewFrais(){
+ var total=state.frais.reduce(function(s,f){return s+(Number(f.montant)||0);},0);
+ var form=ui.fraisForm?(
+  '<div class="card pad mb3 pop">'
+  +'<div class="field"><span class="label">Libellé</span><input class="input" id="f_lib" placeholder="Ex: Détecteur de fuite"/></div>'
+  +'<div class="grid2"><div class="field"><span class="label">Montant (€)</span><input class="input" id="f_montant" type="number" inputmode="decimal" placeholder="0"/></div>'
+  +'<div class="field"><span class="label">Date</span><input class="input" id="f_date" type="date" value="'+todayISO()+'"/></div></div>'
+  +'<div class="field"><span class="label">Catégorie</span>'
+  +'<select class="input" id="f_cat" onchange="B.setFCat(this.value)">'
+  +CATEGORIES.map(function(c){var pd=deducOf(c.key);return '<option value="'+esc(c.key)+'"'+(ui.fCat===c.key?' selected':'')+'>'+esc(c.key)+(pd<100?' — '+pd+'% déduct.':'')+'</option>';}).join('')
+  +'</select></div>'
+  +'<div class="field"><span class="label">Justificatif (ticket)</span>'
+  +'<input type="file" id="capInput" accept="image/*" capture="environment" style="display:none" onchange="B.onPhoto(this)"/>'
+  +'<input type="file" id="upInput" accept="image/*" style="display:none" onchange="B.onPhoto(this)"/>'
+  +'<div class="row">'
+  +'<button class="btn btn-ghost" style="flex:1" onclick="document.getElementById(\'capInput\').click()">'+ico('camera',18,'var(--cyan)')+'Prendre en photo</button>'
+  +'<button class="btn btn-ghost" style="flex:1" onclick="document.getElementById(\'upInput\').click()">'+ico('image',18,'var(--cyan)')+'Galerie</button></div>'
+  +'<div id="frais_preview" style="margin-top:10px"></div></div>'
+  +'<button class="btn btn-primary" onclick="B.addFrais()">Enregistrer le frais</button></div>'):'';
+ var groups=CATEGORIES.map(function(c){
+   var items=state.frais.filter(function(i){return i.categorie===c.key;}).slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
+   var tot=items.reduce(function(s,i){return s+(Number(i.montant)||0);},0);
+   return{c:c,items:items,tot:tot};
+ }).filter(function(g){return g.items.length;});
+ var body=groups.length?groups.map(function(g){
+  var pd=deducOf(g.c.key);
+  return '<div class="mb4"><div class="between mb2" style="padding:0 2px"><div class="row" style="align-items:center;gap:8px;min-width:0">'
+   +'<span class="icobox" style="width:24px;height:24px;background:'+g.c.color+'22;color:'+g.c.color+'">'+ico(g.c.icon,14)+'</span>'
+   +'<span class="trunc" style="font-size:14px;font-weight:600">'+g.c.key+'</span>'
+   +(pd<100?'<span class="chip" style="background:'+g.c.color+'22;color:'+g.c.color+'">déduct. '+pd+'%</span>':'')+'</div>'
+   +'<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:600;color:'+g.c.color+'">'+fmt(g.tot)+'</div>'
+   +(pd<100?'<div class="muted2" style="font-size:10px">déduct. '+fmt(g.tot*pd/100)+'</div>':'')+'</div></div>'
+   +g.items.map(function(i){return '<div class="card pop mb2" style="padding:12px;display:flex;align-items:center;gap:10px">'
+     +'<div style="flex:1;min-width:0"><div class="trunc" style="font-size:14px;font-weight:500">'+esc(i.libelle)+'</div>'
+     +'<div class="muted2" style="font-size:11px">'+frDate(i.date)+(pd<100?' · déduct. '+fmt((Number(i.montant)||0)*pd/100):'')+'</div></div>'
+     +(receiptIds[i.id]?'<button style="color:var(--cyan);padding:4px" onclick="B.viewReceipt(\''+i.id+'\')">'+ico('image',17)+'</button>':'')
+     +'<div style="font-weight:700;white-space:nowrap">'+fmt(i.montant)+'</div>'
+     +'<button style="color:var(--red);padding:4px" onclick="B.delFrais(\''+i.id+'\')">'+ico('trash',15)+'</button></div>';}).join('')
+   +'</div>';
+ }).join(''):'<p class="muted2" style="text-align:center;font-size:14px;padding:32px 0">Aucun frais enregistré.</p>';
+ return '<div class="between mb2"><div><h1>Frais & outillage</h1><p class="muted" style="font-size:12px">Total dépenses : <b style="color:var(--pink)">'+fmt(total)+'</b></p></div>'
+  +'<button class="btn btn-primary" style="padding:9px 14px;font-size:13px" onclick="B.toggleForm(\'frais\')">'+ico(ui.fraisForm?'x':'plus',18)+(ui.fraisForm?'Fermer':'Ajouter')+'</button></div>'
+  +form+body;
+}
+
+/* ============ Render ============ */
+function viewSettings(){
+ return '<h1 class="mb1">Réglages</h1><p class="muted mb3" style="font-size:12px">Société, fiscalité et sauvegarde.</p>'
+ +'<div class="card pad mb3">'
+ +'<div style="font-weight:600;margin-bottom:4px">Société</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:10px">Apparaît en en-tête de tes devis (email / WhatsApp).</p>'
+ +'<span class="label">Nom de la société</span>'
+ +'<input class="input" type="text" value="'+esc(state.settings.companyName||'')+'" placeholder="Ex: Boreas SRL" oninput="B.setCompany(this.value)"/></div>'
+ +'<div class="card pad mb3">'
+ +'<div style="font-weight:600;margin-bottom:4px">Taux de provision fiscale</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Estimation IPP + cotisations sociales complémentaires, appliquée au bénéfice net.</p>'
+ +'<div class="row" style="align-items:center">'
+ +'<input type="range" min="0" max="70" step="1" value="'+state.settings.tauxProvision+'" oninput="B.setTaux(this.value)" style="flex:1"/>'
+ +'<div style="min-width:64px;text-align:center;font-size:22px;font-weight:700;color:var(--orange)" id="tauxLbl">'+state.settings.tauxProvision+'%</div></div></div>'
+ +'<div class="card pad mb3">'
+ +'<div style="font-weight:600;margin-bottom:4px">Déductibilité par catégorie</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Ajuste le % déductible selon les conseils de ton comptable. Chaque changement exige une double confirmation.</p>'
+ +CATEGORIES.map(function(c,i){var pd=deducOf(c.key);var kk=c.key.replace(/'/g,"\\'");return '<div class="row" style="align-items:center;gap:8px;margin-bottom:8px">'
+   +'<span class="icobox" style="width:28px;height:28px;background:'+c.color+'22;color:'+c.color+'">'+ico(c.icon,15)+'</span>'
+   +'<span class="trunc" style="flex:1;font-size:13px">'+c.key+'</span>'
+   +'<input class="input" id="ded_'+i+'" type="number" inputmode="numeric" min="0" max="100" step="1" value="'+pd+'" oninput="B.dedChange('+i+',\''+kk+'\',this.value)" style="width:58px;text-align:center;padding:9px"/>'
+   +'<span class="muted" style="font-size:14px;width:10px">%</span>'
+   +'<span id="dedact_'+i+'" style="min-width:70px;display:flex;gap:4px;justify-content:flex-end;align-items:center"></span></div>';}).join('')
+ +'</div>'
+ +'<div class="card pad mb3">'
+ +'<div style="font-weight:600;margin-bottom:4px">Export comptable</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Transmets tes chantiers et frais à ta comptabilité.</p>'
+ +'<div class="row">'
+ +'<button class="btn btn-ghost" style="flex:1" onclick="B.exportCSV()">'+ico('download',18,'var(--cyan)')+'CSV</button>'
+ +'<button class="btn btn-ghost" style="flex:1" onclick="B.recapPDF()">'+ico('send',18,'var(--cyan)')+'Récap PDF</button></div></div>'
+ +'<div class="card pad mb3" style="border-color:rgba(16,185,129,.4)">'
+ +'<div style="font-weight:600;margin-bottom:4px">'+ico('download',15,'var(--green)')+' Sauvegarde locale complète</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Un seul fichier contenant TOUT : chantiers, frais, devis, réglages et photos de tickets. Indépendant de Google Drive — à garder précieusement (Fichiers, iCloud, clé USB…). C\'est ta protection principale contre la perte de données.</p>'
+ +'<div class="row">'
+ +'<button class="btn btn-primary" style="flex:1" onclick="B.exportBackup()">'+ico('download',18)+'Exporter</button>'
+ +'<input type="file" id="importInput" accept="application/json" style="display:none" onchange="B.importBackup(this)"/>'
+ +'<button class="btn btn-ghost" style="flex:1" onclick="document.getElementById(\'importInput\').click()">'+ico('cloud',18,'var(--cyan)')+'Importer</button></div>'
+ +'<div class="muted2" style="font-size:11px;margin-top:8px;text-align:center" id="backupStatus">'+backupStatusText()+'</div></div>'
+ +'<div class="card pad mb3">'
+ +'<div style="font-weight:600;margin-bottom:4px">Sauvegarde Google Drive</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Synchronise toutes tes données (automatiquement et à la demande). Fonctionne uniquement en ligne.</p>'
+ +'<button class="btn btn-primary" style="width:100%" onclick="B.syncNow(false)">'+ico('cloud',18)+(state.settings.lastSync?'Synchroniser mon Drive':'Connecter mon Drive')+'</button>'
+ +'<div class="muted2" style="font-size:11px;margin-top:8px;text-align:center" id="syncStatus">'+syncStatusText()+'</div>'
+ +'<div style="text-align:center;margin-top:10px"><button class="muted2" style="font-size:11px;text-decoration:underline" onclick="B.toggleDriveAdv()">Options avancées</button></div>'
+ +(ui.driveAdv?('<div style="margin-top:8px"><span class="label">ID client OAuth personnalisé</span>'
+   +'<input class="input" type="text" value="'+esc(state.settings.driveClientId||'')+'" placeholder="Laisser vide = ID intégré" oninput="B.setDriveClientId(this.value)"/>'
+   +'<p class="muted2" style="font-size:10px;margin-top:6px">Par défaut, l\'app utilise l\'ID intégré. N\'en renseigne un autre que pour connecter un projet Google différent.</p></div>'):'')
+ +'</div>';
+}
+var VIEWS={dashboard:viewDashboard,chantiers:viewChantiers,devis:viewDevis,frais:viewFrais,settings:viewSettings};
+var NAVITEMS=[['dashboard','Dashboard','home'],['chantiers','Chantiers','hardhat'],['devis','Devis','calc'],['frais','Frais','receipt'],['settings','Réglages','gear']];
+function renderNav(){
+ $('nav').innerHTML=NAVITEMS.map(function(n){var on=ui.tab===n[0];
+  return '<button class="'+(on?'active':'')+'" onclick="B.setTab(\''+n[0]+'\')">'+ico(n[2],23,'currentColor',on?2.2:1.8)+'<span class="lbl">'+n[1]+'</span></button>';
+ }).join('');
+}
+function render(){
+ $('view').innerHTML=VIEWS[ui.tab]();
+ renderNav();
+ window.scrollTo(0,0);
+ if(ui.tab==='devis')B.calc();
+ if(ui.tab==='chantiers'&&ui.chantierForm&&ui.editingChantierId)renderChantierPhotos();
+}
+
+/* ============ Actions ============ */
+var B={
+ setTab:function(t){ if(ui.tab==='devis')B.saveDevis(); ui.tab=t; ui.settings=false; render(); },
+ setCompany:function(v){ state.settings.companyName=v||''; persist(); },
+ setTaux:function(v){ state.settings.tauxProvision=Number(v); persist(); var l=$('tauxLbl'); if(l)l.textContent=v+'%'; },
+ dedChange:function(i,key){
+   var cont=$('dedact_'+i), inp=$('ded_'+i); if(!cont||!inp)return;
+   var val=inp.value, n=Number(val);
+   if(val===''||isNaN(n)||n===deducOf(key)){ cont.innerHTML=''; return; }
+   var kk=key.replace(/'/g,"\\'");
+   cont.innerHTML='<button style="background:var(--cyan);color:#06222b;font-weight:700;font-size:11px;padding:6px 9px;border-radius:8px" onclick="B.dedValidate('+i+',\''+kk+'\')">Valider</button>';
+ },
+ dedValidate:function(i,key){
+   var cont=$('dedact_'+i); if(!cont)return; var kk=key.replace(/'/g,"\\'");
+   cont.innerHTML='<button style="background:var(--orange);color:#3a2606;font-weight:700;font-size:11px;padding:6px 9px;border-radius:8px" onclick="B.dedConfirm('+i+',\''+kk+'\')">Confirmer&nbsp;?</button>'
+     +'<button style="color:var(--muted);padding:4px" onclick="B.dedCancel('+i+',\''+kk+'\')">'+ico('x',15)+'</button>';
+ },
+ dedConfirm:function(i,key){
+   var inp=$('ded_'+i), cont=$('dedact_'+i); if(!inp)return;
+   var n=Math.max(0,Math.min(100,Number(inp.value)||0));
+   if(!state.settings.deduc)state.settings.deduc={};
+   state.settings.deduc[key]=n; persist(); inp.value=n;
+   if(cont){ cont.innerHTML='<span style="display:flex;align-items:center;color:var(--green)">'+ico('check',17,'var(--green)')+'</span>';
+     setTimeout(function(){var c2=$('dedact_'+i); if(c2)c2.innerHTML='';},1200); }
+ },
+ dedCancel:function(i,key){
+   var inp=$('ded_'+i), cont=$('dedact_'+i);
+   if(inp)inp.value=deducOf(key); if(cont)cont.innerHTML='';
+ },
+ toggleForm:function(w){ if(w==='chantier'){ ui.chantierForm=!ui.chantierForm; ui.editingChantierId=null; ui.chantierLignes=[]; if(ui.chantierForm)ui.cStatut='en_cours'; } else {ui.fraisForm=!ui.fraisForm; pendingBlob=null;} render(); },
+ setFilter:function(f){ ui.filter=f; render(); },
+ setCStatut:function(s){ ui.cStatut=s; var b=$('c_stat').children; b[0].className='selbtn'+(s==='en_cours'?' active':''); b[1].className='selbtn'+(s==='paye'?' active':''); },
+ setFCat:function(k){ ui.fCat=k; },
+ editChantier:function(id){
+   var c=state.chantiers.filter(function(x){return x.id===id;})[0]; if(!c)return;
+   ui.editingChantierId=id; ui.cStatut=c.statut||'en_cours'; ui.chantierForm=true;
+   ui.chantierLignes=(c.lignes||[]).map(function(l){return {id:l.id,libelle:l.libelle,montant:l.montant};});
+   render();
+   renderChantierPhotos();
+   var el=$('view'); if(el)el.scrollIntoView&&window.scrollTo(0,0);
+ },
+ cancelChantierForm:function(){ ui.chantierForm=false; ui.editingChantierId=null; ui.chantierLignes=[]; render(); },
+ /* Recalcule le total affiché + rafraîchit la liste des lignes sans perdre le focus des autres champs */
+ refreshLignesUI:function(){
+   var box=$('c_lignes'); if(box)box.innerHTML=ligneRows(ui.chantierLignes);
+   var mEl=$('c_montant');
+   if(mEl){
+    if(ui.chantierLignes.length){ mEl.value=ligneSum(ui.chantierLignes); mEl.setAttribute('readonly','readonly'); mEl.style.opacity='.65'; }
+    else { mEl.removeAttribute('readonly'); mEl.style.opacity=''; }
+   }
+ },
+ addLigne:function(){ ui.chantierLignes.push({id:uid(),libelle:'',montant:0}); B.refreshLignesUI(); },
+ removeLigne:function(id){ ui.chantierLignes=ui.chantierLignes.filter(function(l){return l.id!==id;}); B.refreshLignesUI(); },
+ onLigneInput:function(id){
+   var l=ui.chantierLignes.filter(function(x){return x.id===id;})[0]; if(!l)return;
+   var libEl=$('cl_lib_'+id), mtEl=$('cl_mt_'+id);
+   l.libelle=libEl?libEl.value:''; l.montant=mtEl?(Number(mtEl.value)||0):0;
+   var mEl=$('c_montant'); if(mEl&&ui.chantierLignes.length)mEl.value=ligneSum(ui.chantierLignes);
+ },
+ addChantier:function(){
+   var client=$('c_client').value.trim();
+   var montant=ui.chantierLignes.length?ligneSum(ui.chantierLignes):Number($('c_montant').value);
+   if(!client||!montant){alert('Nom du client et montant requis.');return;}
+   var desc=$('c_desc').value.trim(), date=($('c_date')&&$('c_date').value)||todayISO();
+   var lignes=ui.chantierLignes.length?ui.chantierLignes.map(function(l){return {id:l.id,libelle:l.libelle,montant:Number(l.montant)||0};}):[];
+   if(ui.editingChantierId){
+     var eid=ui.editingChantierId;
+     state.chantiers=state.chantiers.map(function(c){return c.id===eid?Object.assign({},c,{client:client,description:desc,montant:montant,lignes:lignes,statut:ui.cStatut,date:date}):c;});
+     ui.editingChantierId=null;
+   } else {
+     state.chantiers.unshift({id:uid(),client:client,description:desc,montant:montant,lignes:lignes,statut:ui.cStatut,date:date});
+   }
+   ui.chantierLignes=[];
+   persist(); ui.chantierForm=false; render();
+ },
+ toggleChantier:function(id){ state.chantiers=state.chantiers.map(function(c){return c.id===id?Object.assign({},c,{statut:c.statut==='paye'?'en_cours':'paye'}):c;}); persist(); render(); },
+ delChantier:function(id){
+   var c=chantierById(id);
+   if(c&&c.photos&&c.photos.length){ c.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; }); }
+   state.chantiers=state.chantiers.filter(function(c){return c.id!==id;}); persist(); render();
+ },
+ onChantierPhoto:function(input){
+   var files=input.files?Array.prototype.slice.call(input.files):[]; input.value='';
+   if(!files.length||!ui.editingChantierId)return;
+   var box=$('c_photos'); if(box)box.innerHTML='<span class="muted2" style="font-size:12px">Compression…</span>';
+   (function next(){
+     if(!files.length){ renderChantierPhotos(); return; }
+     var file=files.shift();
+     compressImage(file,function(blob){
+       if(blob)addChantierPhotoBlob(blob);
+       next();
+     });
+   })();
+ },
+ delChantierPhoto:function(id){
+   var c=chantierById(ui.editingChantierId); if(!c)return;
+   idbDelC(id,function(){
+     c.photos=(c.photos||[]).filter(function(p){return p!==id;});
+     if(cphotoUrls[id]){URL.revokeObjectURL(cphotoUrls[id]); delete cphotoUrls[id];}
+     persist(); renderChantierPhotos();
+     if(currentCPhoto===id)B.closeModal();
+   });
+ },
+ viewChantierPhoto:function(id){
+   currentCPhoto=id;
+   var m=$('modal'); m.className='modal'; m.innerHTML='<div class="imgwrap"><span class="muted">Chargement…</span></div>';
+   idbGetC(id,function(rec){
+     if(!rec||!rec.blob){ m.innerHTML='<div class="imgwrap"><span class="muted">Photo introuvable.</span></div><div class="bar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button></div>'; return; }
+     var url=URL.createObjectURL(rec.blob);
+     m.innerHTML='<div class="imgwrap"><img src="'+url+'"/></div>'
+       +'<div class="bar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button>'
+       +'<button class="btn btn-ghost" style="color:var(--red)" onclick="B.delChantierPhoto(\''+id+'\')">'+ico('trash',17)+'Supprimer</button></div>';
+   });
+ },
+ addFrais:function(){
+   var lib=$('f_lib').value.trim(), montant=Number($('f_montant').value);
+   if(!lib||!montant){alert('Libellé et montant requis.');return;}
+   var id=uid();
+   state.frais.unshift({id:id,libelle:lib,montant:montant,date:$('f_date').value||todayISO(),categorie:ui.fCat});
+   persist();
+   var blob=pendingBlob; pendingBlob=null;
+   var finish=function(){ ui.fraisForm=false; render(); };
+   if(blob){ idbPut({id:id,blob:blob,drive:null},function(ok){ if(ok)receiptIds[id]=true; finish(); }); }
+   else finish();
+ },
+ delFrais:function(id){ state.frais=state.frais.filter(function(i){return i.id!==id;}); persist(); if(receiptIds[id]){idbDel(id);delete receiptIds[id];delete receiptDrive[id];} render(); },
+ /* --- justificatifs --- */
+ onPhoto:function(input){
+   var file=input.files&&input.files[0]; input.value='';
+   if(!file)return;
+   var box=$('frais_preview'); if(box)box.innerHTML='<span class="muted2" style="font-size:12px">Compression…</span>';
+   compressImage(file,function(blob){
+     if(!blob){ if(box)box.innerHTML='<span style="color:var(--red);font-size:12px">Image illisible.</span>'; return; }
+     pendingBlob=blob;
+     var url=URL.createObjectURL(blob);
+     if(box)box.innerHTML='<div class="thumb"><img src="'+url+'"/><div class="del" onclick="B.delPending()">'+ico('x',14)+'</div></div>';
+   });
+ },
+ delPending:function(){ pendingBlob=null; var box=$('frais_preview'); if(box)box.innerHTML=''; },
+ viewReceipt:function(id){
+   currentReceipt=id;
+   var m=$('modal'); m.className='modal'; m.innerHTML='<div class="imgwrap"><span class="muted">Chargement…</span></div>';
+   idbGet(id,function(rec){
+     if(!rec||!rec.blob){ m.innerHTML='<div class="imgwrap"><span class="muted">Ticket introuvable.</span></div><div class="bar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button></div>'; return; }
+     receiptDrive[id]=rec.drive||null;
+     var url=URL.createObjectURL(rec.blob);
+     m.innerHTML='<div class="imgwrap"><img src="'+url+'"/></div>'
+       +'<div class="bar" id="modalDrive">'+B.driveBtnHTML(id)+'</div>'
+       +'<div class="bar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button>'
+       +'<button class="btn btn-ghost" style="color:var(--red)" onclick="B.delReceipt(\''+id+'\')">'+ico('trash',17)+'Supprimer</button></div>';
+   });
+ },
+ driveBtnHTML:function(id){
+   var d=receiptDrive[id];
+   if(d&&d.id)return '<div class="btn btn-ghost" style="flex:1;color:var(--green)">'+ico('check',17,'var(--green)')+'Sauvegardé sur Drive</div>';
+   return '<button class="btn btn-ghost" style="flex:1" onclick="B.driveUpload(\''+id+'\')">'+ico('cloud',18,'var(--cyan)')+'Envoyer vers Drive</button>';
+ },
+ refreshModalDrive:function(id){ var el=$('modalDrive'); if(el)el.innerHTML=B.driveBtnHTML(id); },
+ closeModal:function(){ currentReceipt=null; currentCPhoto=null; var m=$('modal'); m.className=''; m.innerHTML=''; },
+ delReceipt:function(id){ idbDel(id,function(){ delete receiptIds[id]; delete receiptDrive[id]; B.closeModal(); render(); }); },
+ driveUpload:function(id){
+   var cid=effectiveClientId();
+   if(!cid){ alert('Aucun ID client OAuth configuré.'); return; }
+   if(!navigator.onLine){ alert('Aucune connexion réseau — réessaie une fois en ligne.'); return; }
+   var el=$('modalDrive'); if(el)el.innerHTML='<div class="btn btn-ghost" style="flex:1">Connexion à Google…</div>';
+   idbGet(id,function(rec){
+     if(!rec||!rec.blob){ alert('Ticket introuvable.'); B.refreshModalDrive(id); return; }
+     driveToken(cid,function(token,err){
+       if(!token){ alert('Google Drive : '+(err||'échec')); B.refreshModalDrive(id); return; }
+       if(el)el.innerHTML='<div class="btn btn-ghost" style="flex:1">Envoi en cours…</div>';
+       driveEnsureFolder(token,function(folderId){
+         driveUploadBlob(token,rec.blob,'ticket-'+id+'.jpg',folderId,function(j,err2){
+           if(j&&j.id){ rec.drive={id:j.id,link:j.webViewLink||''}; idbPut(rec,function(){ receiptDrive[id]=rec.drive; B.refreshModalDrive(id); }); }
+           else { alert('Envoi Drive échoué : '+(err2||'réponse invalide')); B.refreshModalDrive(id); }
+         });
+       });
+     });
+   });
+ },
+ setDriveClientId:function(v){ state.settings.driveClientId=(v||'').trim(); driveTok=null; driveTokExp=0; persist(); },
+ exportBackup:function(){ exportFullBackup(false); },
+ importBackup:function(input){
+   var file=input.files&&input.files[0]; input.value='';
+   if(file)importFullBackup(file);
+ },
+ toggleDriveAdv:function(){ ui.driveAdv=!ui.driveAdv; render(); },
+ syncNow:function(silent){
+   if(!effectiveClientId()){ if(!silent)toast('Aucun ID client OAuth configuré.'); return; }
+   if(!navigator.onLine){ if(!silent)toast('Hors-ligne — synchronisation impossible.'); return; }
+   if(syncBusy){ if(silent){ scheduleAutoSync(); return; } }
+   syncBusy=true;
+   if(!silent)toast('Synchronisation…');
+   driveSync(silent,function(err,action,nUp,nDown){
+     syncBusy=false;
+     if(err){ if(err==='needauth'){ if(!silent)toast('Appuie sur « Connecter mon Drive » pour autoriser Google.'); return; }
+       if(!silent)toast('Synchro : '+err); return; }
+     state.settings.lastSync=Date.now(); persist(true);
+     var s=$('syncStatus'); if(s)s.textContent=syncStatusText();
+     if(action==='pulled'||nDown>0)render();
+     if(!silent){
+       var msg=action==='pulled'?'Données mises à jour depuis Drive.':action==='pushed'?'Sauvegarde envoyée sur Drive.':action==='uploaded'?'Première sauvegarde créée sur Drive.':'Déjà à jour.';
+       var ex=[]; if(nUp>0)ex.push(nUp+' photo'+(nUp>1?'s':'')+' envoyée'+(nUp>1?'s':'')); if(nDown>0)ex.push(nDown+' photo'+(nDown>1?'s':'')+' restaurée'+(nDown>1?'s':''));
+       if(ex.length)msg+=' '+ex.join(', ')+'.';
+       toast(msg);
+     }
+   });
+ },
+ /* --- devis --- */
+ devisVals:function(){
+   var matIds=(state.devis.materiel||[]).map(function(m){return m.id;});
+   var materiel=matIds.map(function(id){
+     var libEl=$('dm_lib_'+id), prixEl=$('dm_prix_'+id);
+     return {id:id, libelle:libEl?libEl.value:'', prix:prixEl?(Number(prixEl.value)||0):0};
+   });
+   var coeff=Number(($('d_coeff')||{}).value)||0;
+   var matTotal=materiel.reduce(function(s,m){return s+m.prix*coeff;},0);
+   return{
+     materiel:materiel, coeff:coeff, matTotal:matTotal,
+     heures:Number(($('d_heures')||{}).value)||0,
+     tarif:Number(($('d_tarif')||{}).value)||0,
+     depl:Number(($('d_depl')||{}).value)||0
+   };
+ },
+ calc:function(){
+   if(!$('r_total'))return;
+   var v=B.devisVals();
+   var mo=v.heures*v.tarif, total=v.matTotal+mo+v.depl;
+   $('r_mat').textContent=fmt2(v.matTotal); $('r_mo').textContent=fmt2(mo);
+   $('r_dep').textContent=fmt2(v.depl); $('r_total').textContent=fmt2(total);
+   var ml=$('d_margeLbl'); if(ml)ml.textContent='Marge : +'+Math.round((v.coeff-1)*100)+'%';
+   B.saveDevis();
+ },
+ syncCoeff:function(val){ if($('d_coeff'))$('d_coeff').value=val; if($('d_coeffR'))$('d_coeffR').value=val; B.calc(); },
+ saveDevis:function(){
+   if(!$('d_coeff'))return; var v=B.devisVals();
+   state.devis={materiel:v.materiel,coeff:$('d_coeff').value,heures:$('d_heures').value,tarif:$('d_tarif').value,deplacement:$('d_depl').value};
+   persist();
+ },
+ addDevisMat:function(){
+   B.saveDevis();
+   state.devis.materiel.push({id:uid(),libelle:'',prix:0});
+   persist();
+   var box=$('d_mat'); if(box)box.innerHTML=matRows(state.devis.materiel);
+   B.calc();
+ },
+ removeDevisMat:function(id){
+   B.saveDevis();
+   state.devis.materiel=(state.devis.materiel||[]).filter(function(m){return m.id!==id;});
+   persist();
+   var box=$('d_mat'); if(box)box.innerHTML=matRows(state.devis.materiel);
+   B.calc();
+ },
+ devisBody:function(){
+   var v=B.devisVals(), mo=v.heures*v.tarif, total=v.matTotal+mo+v.depl;
+   var client=($('d_client')||{}).value||'';
+   var comp=(state.settings.companyName||'').trim();
+   var items=v.materiel.filter(function(m){return m.libelle||m.prix;});
+   var matLines=items.map(function(m){ return '- '+(m.libelle||'Article')+' : '+fmt2(m.prix*v.coeff); }).join('\n');
+   return (comp?comp+'\n':'')+'Devis'+(client?' - '+client:'')+'\n\n'
+     +(matLines?matLines+'\n':'')
+     +'- Main-d\'oeuvre : '+fmt2(mo)+'\n'
+     +'- Deplacement : '+fmt2(v.depl)+'\n\n'
+     +'TOTAL A PAYER : '+fmt2(total)+'\n'
+     +'(TVA non applicable, art. 56bis - franchise de TVA)'
+     +(comp?'\n\n'+comp:'');
+ },
+ shareDevisPDF:function(){
+   var v=B.devisVals(), mo=v.heures*v.tarif, total=v.matTotal+mo+v.depl;
+   var client=(($('d_client')||{}).value||'').trim();
+   var comp=(state.settings.companyName||'').trim();
+   var L=[];
+   if(comp)L.push({t:comp,size:19,bold:true});
+   L.push({t:'DEVIS',size:13,bold:true,color:PDFC.cyan,gap:comp?10:0});
+   L.push({type:'rule',gap:8});
+   if(client)L.push({t:'Client : '+client,size:11,gap:8});
+   L.push({t:'Date : '+frDate(todayISO()),size:11,gap:client?2:8});
+   var items=v.materiel.filter(function(m){return m.libelle||m.prix;});
+   if(items.length){
+    L.push({t:'MATÉRIEL',size:9,bold:true,color:PDFC.muted,gap:16});
+    items.forEach(function(m,i){
+     L.push({type:'itemrow',left:(m.libelle||'Article'),right:euroPDF(m.prix*v.coeff),size:11,shaded:i%2===1,gap:i===0?6:0,valueX:420});
+    });
+   }
+   L.push({type:'rule',gap:items.length?14:14});
+   L.push({type:'row',left:'Main-d\'oeuvre',right:euroPDF(mo),size:11,gap:8,valueX:420});
+   L.push({type:'row',left:'Deplacement',right:euroPDF(v.depl),size:11,valueX:420});
+   L.push({type:'totalbox',left:'TOTAL A PAYER',right:euroPDF(total),size:15,gap:20,valueX:380});
+   L.push({t:'TVA non applicable, art. 56bis (franchise de TVA).',size:9,color:PDFC.muted,gap:14});
+   if(comp)L.push({t:comp,size:10,color:PDFC.muted,gap:20});
+   var name='devis'+(client?'-'+client.replace(/[^A-Za-z0-9]+/g,'_'):'')+'.pdf';
+   sharePDF(makePDF(L),name,'Devis'+(client?' - '+client:''),B.devisBody());
+ },
+ convertDevis:function(){
+   var v=B.devisVals(), mo=v.heures*v.tarif, total=Math.round((v.matTotal+mo+v.depl)*100)/100;
+   var client=(($('d_client')||{}).value||'').trim()||'Nouveau client';
+   var lignes=[];
+   v.materiel.filter(function(m){return m.libelle||m.prix;}).forEach(function(m){
+    lignes.push({id:uid(),libelle:m.libelle||'Article',montant:Math.round(m.prix*v.coeff*100)/100});
+   });
+   if(mo>0)lignes.push({id:uid(),libelle:'Main-d\'œuvre',montant:Math.round(mo*100)/100});
+   if(v.depl>0)lignes.push({id:uid(),libelle:'Déplacement',montant:Math.round(v.depl*100)/100});
+   state.chantiers.unshift({id:uid(),client:client,description:'Converti depuis un devis',montant:total,lignes:lignes,statut:'en_cours',date:todayISO()});
+   persist(); ui.tab='chantiers'; render();
+ },
+ /* --- export --- */
+ exportCSV:function(){
+   function q(s){s=String(s==null?'':s);return /[";\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+   var f=finance(), sep=';', L=[];
+   var comp=(state.settings.companyName||'').trim();
+   if(comp)L.push(q(comp));
+   L.push('BOREAS ASSISTANT - Export du '+todayISO());
+   L.push('');
+   L.push('RESUME');
+   L.push('CA encaisse'+sep+f.ca);
+   L.push('Total frais reels'+sep+f.fraisReel);
+   L.push('Frais deductibles'+sep+Math.round(f.fraisDeduc));
+   L.push('Benefice net (base imposable)'+sep+Math.round(f.benefice));
+   L.push('Provision '+f.taux+'%'+sep+Math.round(f.provision));
+   L.push('Reste en poche'+sep+Math.round(f.reste));
+   L.push('');
+   L.push('CHANTIERS');
+   L.push(['Date','Client','Description','Montant','Statut'].join(sep));
+   state.chantiers.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(c){
+     L.push([c.date,q(c.client),q(c.description),c.montant,c.statut==='paye'?'Paye':'En cours'].join(sep));
+   });
+   var chantiersAvecLignes=state.chantiers.filter(function(c){return c.lignes&&c.lignes.length;});
+   if(chantiersAvecLignes.length){
+    L.push('');
+    L.push('LIGNES DE FACTURATION DETAILLEES');
+    L.push(['Date','Client','Ligne','Montant'].join(sep));
+    chantiersAvecLignes.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(c){
+      c.lignes.forEach(function(l){
+        L.push([c.date,q(c.client),q(l.libelle),l.montant].join(sep));
+      });
+    });
+   }
+   L.push('');
+   L.push('FRAIS');
+   L.push(['Date','Libelle','Categorie','Montant','% Deduc','Deductible'].join(sep));
+   state.frais.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(i){
+     var pd=deducOf(i.categorie);
+     L.push([i.date,q(i.libelle),q(i.categorie),i.montant,pd,Math.round((Number(i.montant)||0)*pd/100)].join(sep));
+   });
+   var csv='﻿'+L.join('\r\n');
+   try{
+     var blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+     var url=URL.createObjectURL(blob);
+     var a=document.createElement('a');
+     a.href=url; a.download='boreas-export-'+todayISO()+'.csv';
+     document.body.appendChild(a); a.click();
+     setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},1500);
+   }catch(e){ alert('Export impossible sur ce navigateur : '+e.message); }
+ },
+ recapPDF:function(){
+   var f=finance(); var comp=(state.settings.companyName||'').trim();
+   var L=[];
+   if(comp)L.push({t:comp,size:19,bold:true});
+   L.push({t:'RÉCAPITULATIF',size:13,bold:true,color:PDFC.cyan,gap:comp?10:0});
+   L.push({type:'rule',gap:8});
+   L.push({t:'Au '+frDate(todayISO()),size:11,gap:8});
+   var rows=[
+    ['CA encaisse',euroPDF(f.ca)],
+    ['Total frais réels',euroPDF(f.fraisReel)],
+    ['Frais déductibles',euroPDF(f.fraisDeduc)],
+    ['Bénéfice net (base imposable)',euroPDF(f.benefice)],
+    ['Provision '+f.taux+'%',euroPDF(f.provision)]
+   ];
+   rows.forEach(function(r,i){ L.push({type:'itemrow',left:r[0],right:r[1],size:11,shaded:i%2===1,gap:i===0?16:0,valueX:400}); });
+   L.push({type:'rule',gap:12});
+   L.push({type:'totalbox',left:'RESTE EN POCHE',right:euroPDF(f.reste),size:15,gap:6,valueX:340});
+   L.push({t:'Plafond franchise TVA : '+euroPDF(f.ca)+' / '+euroPDF(TVA_LIMIT),size:11,color:PDFC.muted,gap:20});
+   L.push({t:'Chantiers payés : '+state.chantiers.filter(function(c){return c.statut==='paye';}).length,size:11,color:PDFC.muted,gap:6});
+   L.push({t:'Chantiers en cours : '+state.chantiers.filter(function(c){return c.statut!=='paye';}).length,size:11,color:PDFC.muted});
+   L.push({t:'Frais enregistrés : '+state.frais.length,size:11,color:PDFC.muted});
+   sharePDF(makePDF(L),'recap-'+todayISO()+'.pdf','Recapitulatif'+(comp?' - '+comp:''),'Recapitulatif comptable'+(comp?' - '+comp:''));
+ }
+};
+window.B=B;
+render();
+/* Auto-synchronisation au lancement (silencieuse ; retombe sur le bouton manuel si l'autorisation est requise) */
+if(effectiveClientId()){ setTimeout(function(){ B.syncNow(true); }, 700); }
+</script>
+</body>
+</html>
