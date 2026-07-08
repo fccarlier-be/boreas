@@ -246,7 +246,9 @@ function clientStats(id){
  var list=state.chantiers.filter(function(c){return c.clientId===id;});
  var total=list.reduce(function(s,c){return s+(Number(c.montant)||0);},0);
  var sorted=list.slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
- return{count:list.length,total:total,last:sorted[0]||null};
+ var chIds=list.map(function(c){return c.id;});
+ var fraisTotal=state.frais.filter(function(f){return f.chantierId&&chIds.indexOf(f.chantierId)>-1;}).reduce(function(s,f){return s+(Number(f.montant)||0);},0);
+ return{count:list.length,total:total,last:sorted[0]||null,fraisTotal:fraisTotal,marge:total-fraisTotal};
 }
 if(!state.updatedAt){ state.updatedAt=Date.now(); persist(true); }
 function effectiveClientId(){ return (state.settings.driveClientId||'').trim() || DRIVE_CLIENT_ID; }
@@ -877,6 +879,25 @@ function clientSuggestHTML(query,ctx){
  if(!exact&&query.trim())rows+='<div class="suggestrow" style="color:var(--cyan)" onmousedown="B.createClientInline(\''+ctx+'\')">'+ico('plus',13)+' Créer « '+esc(query.trim())+' »</div>';
  return rows;
 }
+/* ============ Sélecteur de chantier pour les frais (optionnel) ============ */
+function chantierFieldHTML(){
+ return '<div style="position:relative">'
+ +'<input class="input" id="f_chantier" placeholder="Rechercher un chantier" autocomplete="off" '
+ +'oninput="B.onChantierPick(this.value)" onfocus="B.onChantierPick(this.value)" onblur="setTimeout(function(){B.hideChantierSuggest();},150)"/>'
+ +'<input type="hidden" id="f_chantierId" value=""/>'
+ +'<div id="f_chantierSuggest" class="suggestbox" style="display:none"></div>'
+ +'</div>';
+}
+function chantierSuggestHTML(query){
+ var norm=normName(query);
+ var list=state.chantiers.filter(function(c){
+   return !norm||normName(c.client).indexOf(norm)>-1||normName(c.description||'').indexOf(norm)>-1;
+ }).slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');}).slice(0,6);
+ if(!list.length)return '<div class="suggestrow muted2" style="cursor:default">Aucun chantier trouvé.</div>';
+ return list.map(function(c){
+  return '<div class="suggestrow" onmousedown="B.pickChantierForFrais(\''+c.id+'\')">'+esc(c.client)+(c.description?' <span class="muted2" style="font-size:11px">· '+esc(c.description)+'</span>':'')+'</div>';
+ }).join('');
+}
 function clientRowsHTML(){
  var q=normName(ui.clientSearch);
  var list=state.clients.filter(function(c){return !q||normName(c.nom).indexOf(q)>-1;}).slice().sort(function(a,b){return a.nom.localeCompare(b.nom,'fr');});
@@ -914,7 +935,9 @@ function viewClientDetail(id){
  +'<div class="field"><span class="label">Notes</span><textarea class="input" rows="3" style="resize:vertical" oninput="B.setClientField(\''+id+'\',\'notes\',this.value)">'+esc(c.notes||'')+'</textarea></div>'
  +'</div>'
  +'<div class="card pad mb3"><div class="between mb1"><span style="font-weight:600;font-size:14px">Total facturé</span><span style="font-weight:700;color:var(--cyan)">'+fmt(st.total)+'</span></div>'
- +'<p class="muted2" style="font-size:12px">'+st.count+' chantier'+(st.count>1?'s':'')+'</p></div>'
+ +(st.fraisTotal?'<div class="between mb1"><span class="muted" style="font-size:13px">Frais engagés (liés)</span><span style="color:var(--pink)">-'+fmt(st.fraisTotal)+'</span></div>'
+   +'<div class="between" style="padding-top:6px;border-top:1px solid var(--border)"><span style="font-weight:600;font-size:14px">Marge réelle</span><span style="font-weight:700;color:'+(st.marge>=0?'var(--green)':'var(--red)')+'">'+fmt(st.marge)+'</span></div>':'')
+ +'<p class="muted2" style="font-size:12px;margin-top:6px">'+st.count+' chantier'+(st.count>1?'s':'')+'</p></div>'
  +'<div class="mb2" style="font-weight:600;font-size:14px">Historique</div>'
  +(hist.length?hist.map(function(ch){
    var paid=ch.statut==='paye';
@@ -1030,6 +1053,7 @@ function viewFrais(){
   +'<select class="input" id="f_cat" onchange="B.setFCat(this.value)">'
   +CATEGORIES.map(function(c){var pd=deducOf(c.key);return '<option value="'+esc(c.key)+'"'+(ui.fCat===c.key?' selected':'')+'>'+esc(c.key)+(pd<100?' — '+pd+'% déduct.':'')+'</option>';}).join('')
   +'</select></div>'
+  +'<div class="field"><span class="label">Chantier concerné (optionnel)</span>'+chantierFieldHTML()+'</div>'
   +'<div class="field"><span class="label">Justificatif (ticket)</span>'
   +'<input type="file" id="capInput" accept="image/*" capture="environment" style="display:none" onchange="B.onPhoto(this)"/>'
   +'<input type="file" id="upInput" accept="image/*" style="display:none" onchange="B.onPhoto(this)"/>'
@@ -1051,9 +1075,11 @@ function viewFrais(){
    +(pd<100?'<span class="chip" style="background:'+g.c.color+'22;color:'+g.c.color+'">déduct. '+pd+'%</span>':'')+'</div>'
    +'<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:600;color:'+g.c.color+'">'+fmt(g.tot)+'</div>'
    +(pd<100?'<div class="muted2" style="font-size:10px">déduct. '+fmt(g.tot*pd/100)+'</div>':'')+'</div></div>'
-   +g.items.map(function(i){return '<div class="card pop mb2" style="padding:12px;display:flex;align-items:center;gap:10px">'
+   +g.items.map(function(i){
+     var ch=i.chantierId?chantierById(i.chantierId):null;
+     return '<div class="card pop mb2" style="padding:12px;display:flex;align-items:center;gap:10px">'
      +'<div style="flex:1;min-width:0"><div class="trunc" style="font-size:14px;font-weight:500">'+esc(i.libelle)+'</div>'
-     +'<div class="muted2" style="font-size:11px">'+frDate(i.date)+(pd<100?' · déduct. '+fmt((Number(i.montant)||0)*pd/100):'')+'</div></div>'
+     +'<div class="muted2" style="font-size:11px">'+frDate(i.date)+(pd<100?' · déduct. '+fmt((Number(i.montant)||0)*pd/100):'')+(ch?' · '+esc(ch.client):'')+'</div></div>'
      +(receiptIds[i.id]?'<button style="color:var(--cyan);padding:4px" onclick="B.viewReceipt(\''+i.id+'\')">'+ico('image',17)+'</button>':'')
      +'<div style="font-weight:700;white-space:nowrap">'+fmt(i.montant)+'</div>'
      +'<button style="color:var(--red);padding:4px" onclick="B.delFrais(\''+i.id+'\')">'+ico('trash',15)+'</button></div>';}).join('')
@@ -1259,7 +1285,9 @@ var B={
  delChantier:function(id){
    var c=chantierById(id);
    if(c&&c.photos&&c.photos.length){ c.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; }); }
-   state.chantiers=state.chantiers.filter(function(c){return c.id!==id;}); persist(); render();
+   state.chantiers=state.chantiers.filter(function(c){return c.id!==id;});
+   state.frais.forEach(function(f){ if(f.chantierId===id)f.chantierId=null; });
+   persist(); render();
  },
  onChantierPhoto:function(input){
    var files=input.files?Array.prototype.slice.call(input.files):[]; input.value='';
@@ -1294,11 +1322,25 @@ var B={
        +'<button class="btn btn-ghost" style="color:var(--red)" onclick="B.delChantierPhoto(\''+id+'\')">'+ico('trash',17)+'Supprimer</button></div>';
    });
  },
+ onChantierPick:function(val){
+   var idEl=$('f_chantierId'); if(idEl)idEl.value='';
+   var box=$('f_chantierSuggest'); if(!box)return;
+   box.innerHTML=chantierSuggestHTML(val); box.style.display='block';
+ },
+ hideChantierSuggest:function(){ var box=$('f_chantierSuggest'); if(box)box.style.display='none'; },
+ pickChantierForFrais:function(id){
+   var c=chantierById(id); if(!c)return;
+   var inp=$('f_chantier'), idEl=$('f_chantierId');
+   if(inp)inp.value=c.client+(c.description?' · '+c.description:'');
+   if(idEl)idEl.value=id;
+   B.hideChantierSuggest();
+ },
  addFrais:function(){
    var lib=$('f_lib').value.trim(), montant=Number($('f_montant').value);
    if(!lib||!montant){alert('Libellé et montant requis.');return;}
    var id=uid();
-   state.frais.unshift({id:id,libelle:lib,montant:montant,date:$('f_date').value||todayISO(),categorie:ui.fCat});
+   var chantierId=($('f_chantierId')||{}).value||null;
+   state.frais.unshift({id:id,libelle:lib,montant:montant,date:$('f_date').value||todayISO(),categorie:ui.fCat,chantierId:chantierId||null});
    persist();
    var blob=pendingBlob; pendingBlob=null;
    var finish=function(){ ui.fraisForm=false; render(); };
@@ -1519,10 +1561,11 @@ var B={
    }
    L.push('');
    L.push('FRAIS');
-   L.push(['Date','Libelle','Categorie','Montant','% Deduc','Deductible'].join(sep));
+   L.push(['Date','Libelle','Categorie','Montant','% Deduc','Deductible','Chantier lie'].join(sep));
    state.frais.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(i){
      var pd=deducOf(i.categorie);
-     L.push([i.date,q(i.libelle),q(i.categorie),i.montant,pd,Math.round((Number(i.montant)||0)*pd/100)].join(sep));
+     var ch=i.chantierId?chantierById(i.chantierId):null;
+     L.push([i.date,q(i.libelle),q(i.categorie),i.montant,pd,Math.round((Number(i.montant)||0)*pd/100),q(ch?ch.client:'')].join(sep));
    });
    var csv='﻿'+L.join('\r\n');
    try{
