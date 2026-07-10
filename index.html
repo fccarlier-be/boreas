@@ -90,7 +90,7 @@ svg{display:block;}
 .modal{position:fixed;inset:0;background:rgba(4,8,15,.92);z-index:60;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);}
 .modal .imgwrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto;}
 .modal img{max-width:100%;max-height:100%;border-radius:12px;}
-.modal .bar{display:flex;gap:10px;padding:12px 16px;}
+.modalbar{display:flex;gap:10px;padding:12px 16px;}
 #toast{position:fixed;left:0;right:0;bottom:104px;display:flex;justify-content:center;z-index:70;pointer-events:none;}
 #toast .t{background:var(--card2);border:1px solid var(--border);color:var(--text);padding:10px 16px;border-radius:12px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.45);opacity:0;transform:translateY(8px);transition:.25s;max-width:88%;text-align:center;}
 #toast .t.show{opacity:1;transform:none;}
@@ -107,8 +107,11 @@ svg{display:block;}
 /* ============ Helpers ============ */
 var fmt=function(n){return new Intl.NumberFormat('fr-BE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(Number(n)||0);};
 var fmt2=function(n){return new Intl.NumberFormat('fr-BE',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(Number(n)||0);};
+/* Arrondit au centime : à utiliser après toute somme/multiplication de montants,
+   pour ne jamais stocker/exporter un résidu flottant (ex: 899.9999999999999). */
+var round2=function(n){return Math.round((Number(n)||0)*100)/100;};
 var uid=function(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);};
-var todayISO=function(){return new Date().toISOString().slice(0,10);};
+var todayISO=function(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 var frDate=function(iso){try{return new Date(iso+'T00:00').toLocaleDateString('fr-BE',{day:'2-digit',month:'short',year:'numeric'});}catch(e){return iso;}};
 var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
 var $=function(id){return document.getElementById(id);};
@@ -244,11 +247,11 @@ function migrateClientLinks(){
 if(migrateClientLinks())persist(true);
 function clientStats(id){
  var list=state.chantiers.filter(function(c){return c.clientId===id;});
- var total=list.reduce(function(s,c){return s+(Number(c.montant)||0);},0);
+ var total=round2(list.reduce(function(s,c){return s+(Number(c.montant)||0);},0));
  var sorted=list.slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
  var chIds=list.map(function(c){return c.id;});
- var fraisTotal=state.frais.filter(function(f){return f.chantierId&&chIds.indexOf(f.chantierId)>-1;}).reduce(function(s,f){return s+(Number(f.montant)||0);},0);
- return{count:list.length,total:total,last:sorted[0]||null,fraisTotal:fraisTotal,marge:total-fraisTotal};
+ var fraisTotal=round2(state.frais.filter(function(f){return f.chantierId&&chIds.indexOf(f.chantierId)>-1;}).reduce(function(s,f){return s+(Number(f.montant)||0);},0));
+ return{count:list.length,total:total,last:sorted[0]||null,fraisTotal:fraisTotal,marge:round2(total-fraisTotal)};
 }
 if(!state.updatedAt){ state.updatedAt=Date.now(); persist(true); }
 function effectiveClientId(){ return (state.settings.driveClientId||'').trim() || DRIVE_CLIENT_ID; }
@@ -773,18 +776,27 @@ function sharePDF(blob,name,title,text){
  downloadBlob(blob,name); toast('PDF téléchargé (partage natif indisponible ici).');
 }
 
-var ui={tab:'dashboard',chantierForm:false,editingChantierId:null,chantierLignes:[],fraisForm:false,settings:false,driveAdv:false,filter:'tous',cStatut:'en_cours',fCat:CATEGORIES[0].key,clientSearch:'',selectedClientId:null};
+var ui={tab:'dashboard',chantierForm:false,editingChantierId:null,chantierLignes:[],fraisForm:false,editingFraisId:null,settings:false,driveAdv:false,filter:'tous',cStatut:'en_cours',fCat:CATEGORIES[0].key,clientSearch:'',selectedClientId:null,financeYear:new Date().getFullYear()};
 
 /* ============ Finance ============ */
-function finance(){
- var ca=state.chantiers.filter(function(c){return c.statut==='paye';}).reduce(function(s,c){return s+(Number(c.montant)||0);},0);
- var fraisReel=state.frais.reduce(function(s,f){return s+(Number(f.montant)||0);},0);
- var fraisDeduc=state.frais.reduce(function(s,f){return s+(Number(f.montant)||0)*(deducOf(f.categorie)/100);},0);
- var benefice=ca-fraisDeduc;                 // bénéfice net fiscal (base imposable)
+function availableYears(){
+ var ys={}; ys[new Date().getFullYear()]=true;    // toujours proposer l'année en cours, même sans données
+ state.chantiers.forEach(function(c){ if(c.date)ys[c.date.slice(0,4)]=true; });
+ state.frais.forEach(function(f){ if(f.date)ys[f.date.slice(0,4)]=true; });
+ return Object.keys(ys).sort().reverse();
+}
+function finance(year){
+ var yr=String(year||ui.financeYear||new Date().getFullYear());   // franchise TVA (art. 56bis) : seuil ANNUEL, année civile
+ var chantiersYr=state.chantiers.filter(function(c){return c.statut==='paye'&&(c.date||'').slice(0,4)===yr;});
+ var fraisYr=state.frais.filter(function(f){return(f.date||'').slice(0,4)===yr;});
+ var ca=round2(chantiersYr.reduce(function(s,c){return s+(Number(c.montant)||0);},0));
+ var fraisReel=round2(fraisYr.reduce(function(s,f){return s+(Number(f.montant)||0);},0));
+ var fraisDeduc=round2(fraisYr.reduce(function(s,f){return s+(Number(f.montant)||0)*(deducOf(f.categorie)/100);},0));
+ var benefice=round2(ca-fraisDeduc);          // bénéfice net fiscal (base imposable), année sélectionnée
  var taux=(Number(state.settings.tauxProvision)||0)/100;
- var provision=benefice>0?benefice*taux:0;
- var reste=ca-fraisReel-provision;           // trésorerie réelle en poche
- return{ca:ca,frais:fraisReel,fraisReel:fraisReel,fraisDeduc:fraisDeduc,benefice:benefice,provision:provision,reste:reste,taux:state.settings.tauxProvision};
+ var provision=round2(benefice>0?benefice*taux:0);
+ var reste=round2(ca-fraisReel-provision);    // trésorerie réelle en poche, année sélectionnée
+ return{ca:ca,frais:fraisReel,fraisReel:fraisReel,fraisDeduc:fraisDeduc,benefice:benefice,provision:provision,reste:reste,taux:state.settings.tauxProvision,year:yr};
 }
 function tvaColor(ca){return ca>=23000?'var(--red)':ca>=18000?'var(--orange)':'var(--green)';}
 function tvaHex(ca){return ca>=23000?'#ef4444':ca>=18000?'#f59e0b':'#10b981';}
@@ -830,15 +842,18 @@ function viewDashboard(){
  +'<button class="btn btn-ghost" style="padding:10px;border-radius:12px" onclick="B.setTab(\'settings\')">'+ico('gear',20)+'</button></div>'
  +backupBanner()
  +'<div class="card pad mb3">'
- +'<div class="between mb1"><span style="font-weight:600;font-size:14px">Plafond franchise TVA</span>'+ico('trend',16,'var(--muted2)')+'</div>'
+ +'<div class="between mb1"><span style="font-weight:600;font-size:14px">Plafond franchise TVA</span>'
+ +'<select id="finYearSel" onchange="B.setFinanceYear(this.value)" style="background:var(--card2);color:var(--muted2);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:11px">'
+ +availableYears().map(function(y){return '<option value="'+y+'"'+(y===f.year?' selected':'')+'>'+y+'</option>';}).join('')
+ +'</select></div>'
  +gaugeSVG(f.ca)
  +'<div class="bar" style="margin-top:8px"><span style="width:'+Math.min(f.ca/TVA_LIMIT*100,100)+'%;background:'+tvaHex(f.ca)+'"></span></div>'
  +'<p class="muted" style="font-size:12px;text-align:center;margin-top:8px">Reste avant plafond : <b style="color:var(--text)">'+fmt(Math.max(TVA_LIMIT-f.ca,0))+'</b></p></div>'
- +'<div class="row mb3">'+statCard('coins','CA encaissé',fmt(f.ca),'#06b6d4')+statCard('receipt','Total frais',fmt(f.fraisReel),'#f472b6',f.fraisDeduc<f.fraisReel?'dont déduct. '+fmt(f.fraisDeduc):'')+'</div>'
+ +'<div class="row mb3">'+statCard('coins','CA encaissé '+f.year,fmt(f.ca),'#06b6d4')+statCard('receipt','Frais '+f.year,fmt(f.fraisReel),'#f472b6',f.fraisDeduc<f.fraisReel?'dont déduct. '+fmt(f.fraisDeduc):'')+'</div>'
  +'<div class="row mb3">'+statCard('trend','Bénéfice net',fmt(f.benefice),f.benefice>=0?'#10b981':'#ef4444','Après déductibilité')+statCard('piggy','Provision '+f.taux+'%',fmt(f.provision),'#f59e0b','Impôts + cotis.')+'</div>'
  +'<div class="card pad mb3" style="border-color:rgba(16,185,129,.4)"><div class="between">'
  +'<div class="row" style="align-items:center;gap:10px"><div class="icobox" style="width:38px;height:38px;background:rgba(16,185,129,.15);color:var(--green)">'+ico('wallet',19)+'</div>'
- +'<div><div class="muted" style="font-size:12px">Reste réellement en poche</div><div class="muted2" style="font-size:11px">CA − frais réels − provision</div></div></div>'
+ +'<div><div class="muted" style="font-size:12px">Reste réellement en poche</div><div class="muted2" style="font-size:11px">CA − frais réels − provision · '+f.year+'</div></div></div>'
  +'<div style="font-size:24px;font-weight:700;color:var(--green)">'+fmt(f.reste)+'</div></div></div>'
  +'<div class="row">'
  +'<button onclick="B.setTab(\'frais\')" class="card pop" style="flex:1;padding:16px;display:flex;flex-direction:column;align-items:center;gap:8px">'
@@ -857,7 +872,12 @@ function ligneRows(lignes){
    +'<button class="btn btn-ghost" style="padding:10px;color:var(--red)" onclick="B.removeLigne(\''+l.id+'\')">'+ico('trash',15)+'</button></div>';
  }).join('');
 }
-function ligneSum(lignes){ return lignes.reduce(function(s,l){return s+(Number(l.montant)||0);},0); }
+function ligneSum(lignes){ return round2(lignes.reduce(function(s,l){return s+(Number(l.montant)||0);},0)); }
+/* Badge "Payé / En cours" — factorisé (répété 3x auparavant dans les vues chantiers/clients) */
+function statutChip(statut){
+ var paid=statut==='paye';
+ return '<span class="chip" style="'+(paid?'background:rgba(16,185,129,.15);color:var(--green)':'background:rgba(245,158,11,.15);color:var(--orange)')+'">'+(paid?'Payé':'En cours')+'</span>';
+}
 /* ============ Champ client avec autocomplétion (chantiers + devis) ============ */
 /* ctx = 'c' (chantier) ou 'd' (devis) — préfixe des ids DOM du champ concerné */
 function clientFieldHTML(ctx,name,clientId){
@@ -880,11 +900,11 @@ function clientSuggestHTML(query,ctx){
  return rows;
 }
 /* ============ Sélecteur de chantier pour les frais (optionnel) ============ */
-function chantierFieldHTML(){
+function chantierFieldHTML(name,chantierId){
  return '<div style="position:relative">'
- +'<input class="input" id="f_chantier" placeholder="Rechercher un chantier" autocomplete="off" '
+ +'<input class="input" id="f_chantier" placeholder="Rechercher un chantier" autocomplete="off" value="'+esc(name||'')+'" '
  +'oninput="B.onChantierPick(this.value)" onfocus="B.onChantierPick(this.value)" onblur="setTimeout(function(){B.hideChantierSuggest();},150)"/>'
- +'<input type="hidden" id="f_chantierId" value=""/>'
+ +'<input type="hidden" id="f_chantierId" value="'+esc(chantierId||'')+'"/>'
  +'<div id="f_chantierSuggest" class="suggestbox" style="display:none"></div>'
  +'</div>';
 }
@@ -909,7 +929,7 @@ function clientRowsHTML(){
   +(c.telephone?'<p class="muted2" style="font-size:11px;margin-top:2px">'+esc(c.telephone)+'</p>':'')
   +'<p class="muted2" style="font-size:11px;margin-top:2px">'+st.count+' chantier'+(st.count>1?'s':'')+'</p></div>'
   +'<div style="text-align:right;white-space:nowrap"><div style="font-weight:700;color:var(--cyan)">'+fmt(st.total)+'</div>'
-  +(st.last?'<span class="chip" style="margin-top:4px;display:inline-block;'+(st.last.statut==='paye'?'background:rgba(16,185,129,.15);color:var(--green)':'background:rgba(245,158,11,.15);color:var(--orange)')+'">'+(st.last.statut==='paye'?'Payé':'En cours')+'</span>':'')
+  +(st.last?'<span style="margin-top:4px;display:inline-block">'+statutChip(st.last.statut)+'</span>':'')
   +'</div></div></div>';
  }).join('');
 }
@@ -940,12 +960,11 @@ function viewClientDetail(id){
  +'<p class="muted2" style="font-size:12px;margin-top:6px">'+st.count+' chantier'+(st.count>1?'s':'')+'</p></div>'
  +'<div class="mb2" style="font-weight:600;font-size:14px">Historique</div>'
  +(hist.length?hist.map(function(ch){
-   var paid=ch.statut==='paye';
    return '<div class="card pop mb2" style="padding:12px;cursor:pointer" onclick="B.gotoChantier(\''+ch.id+'\')"><div class="between">'
    +'<div style="flex:1;min-width:0"><div class="trunc" style="font-size:13px;font-weight:500">'+esc(ch.description||'Chantier')+'</div>'
    +'<div class="muted2" style="font-size:11px">'+frDate(ch.date)+'</div></div>'
    +'<div style="text-align:right;white-space:nowrap"><div style="font-weight:700">'+fmt(ch.montant)+'</div>'
-   +'<span class="chip" style="'+(paid?'background:rgba(16,185,129,.15);color:var(--green)':'background:rgba(245,158,11,.15);color:var(--orange)')+'">'+(paid?'Payé':'En cours')+'</span></div></div></div>';
+   +statutChip(ch.statut)+'</div></div></div>';
   }).join(''):'<p class="muted2" style="font-size:13px">Aucun chantier enregistré pour ce client.</p>')
  +'<button class="btn btn-ghost" style="width:100%;margin-top:14px;color:var(--red)" onclick="B.deleteClient(\''+id+'\')">'+ico('trash',17)+'Supprimer ce client</button>';
 }
@@ -985,7 +1004,7 @@ function viewChantiers(){
   return '<div class="card listitem pop mb2"><div class="between" style="align-items:flex-start">'
    +'<div style="flex:1;min-width:0;margin-right:10px"><div class="row" style="align-items:center;gap:8px">'
    +'<span style="font-weight:600" class="trunc">'+esc(c.client)+'</span>'
-   +'<span class="chip" style="'+(paid?'background:rgba(16,185,129,.15);color:var(--green)':'background:rgba(245,158,11,.15);color:var(--orange)')+'">'+(paid?'Payé':'En cours')+'</span></div>'
+   +statutChip(c.statut)+'</div>'
    +(c.description?'<p class="muted trunc" style="font-size:12px;margin-top:2px">'+esc(c.description)+'</p>':'')
    +'<div class="row" style="align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap"><p class="muted2" style="font-size:11px">'+frDate(c.date)+'</p>'
    +(nl?'<span class="muted2" style="font-size:11px">· '+nl+' ligne'+(nl>1?'s':'')+'</span>':'')
@@ -1044,16 +1063,19 @@ function viewDevis(){
 
 function viewFrais(){
  var total=state.frais.reduce(function(s,f){return s+(Number(f.montant)||0);},0);
+ var editing=ui.editingFraisId?state.frais.filter(function(f){return f.id===ui.editingFraisId;})[0]:null;
+ var editingCh=editing&&editing.chantierId?chantierById(editing.chantierId):null;
  var form=ui.fraisForm?(
   '<div class="card pad mb3 pop">'
-  +'<div class="field"><span class="label">Libellé</span><input class="input" id="f_lib" placeholder="Ex: Détecteur de fuite"/></div>'
-  +'<div class="grid2"><div class="field"><span class="label">Montant (€)</span><input class="input" id="f_montant" type="number" inputmode="decimal" placeholder="0"/></div>'
-  +'<div class="field"><span class="label">Date</span><input class="input" id="f_date" type="date" value="'+todayISO()+'"/></div></div>'
+  +(editing?'<div class="mb2" style="font-weight:600;font-size:13px;color:var(--cyan)">'+ico('edit',14,'var(--cyan)')+' Modification du frais</div>':'')
+  +'<div class="field"><span class="label">Libellé</span><input class="input" id="f_lib" placeholder="Ex: Détecteur de fuite" value="'+esc(editing?editing.libelle:'')+'"/></div>'
+  +'<div class="grid2"><div class="field"><span class="label">Montant (€)</span><input class="input" id="f_montant" type="number" inputmode="decimal" placeholder="0" value="'+(editing?esc(editing.montant):'')+'"/></div>'
+  +'<div class="field"><span class="label">Date</span><input class="input" id="f_date" type="date" value="'+(editing?editing.date:todayISO())+'"/></div></div>'
   +'<div class="field"><span class="label">Catégorie</span>'
   +'<select class="input" id="f_cat" onchange="B.setFCat(this.value)">'
   +CATEGORIES.map(function(c){var pd=deducOf(c.key);return '<option value="'+esc(c.key)+'"'+(ui.fCat===c.key?' selected':'')+'>'+esc(c.key)+(pd<100?' — '+pd+'% déduct.':'')+'</option>';}).join('')
   +'</select></div>'
-  +'<div class="field"><span class="label">Chantier concerné (optionnel)</span>'+chantierFieldHTML()+'</div>'
+  +'<div class="field"><span class="label">Chantier concerné (optionnel)</span>'+chantierFieldHTML(editingCh?(editingCh.client+(editingCh.description?' · '+editingCh.description:'')):'',editing?(editing.chantierId||''):'')+'</div>'
   +'<div class="field"><span class="label">Justificatif (ticket)</span>'
   +'<input type="file" id="capInput" accept="image/*" capture="environment" style="display:none" onchange="B.onPhoto(this)"/>'
   +'<input type="file" id="upInput" accept="image/*" style="display:none" onchange="B.onPhoto(this)"/>'
@@ -1061,7 +1083,7 @@ function viewFrais(){
   +'<button class="btn btn-ghost" style="flex:1" onclick="document.getElementById(\'capInput\').click()">'+ico('camera',18,'var(--cyan)')+'Prendre en photo</button>'
   +'<button class="btn btn-ghost" style="flex:1" onclick="document.getElementById(\'upInput\').click()">'+ico('image',18,'var(--cyan)')+'Galerie</button></div>'
   +'<div id="frais_preview" style="margin-top:10px"></div></div>'
-  +'<button class="btn btn-primary" onclick="B.addFrais()">Enregistrer le frais</button></div>'):'';
+  +'<button class="btn btn-primary" onclick="B.addFrais()">'+(editing?'Enregistrer les modifications':'Enregistrer le frais')+'</button></div>'):'';
  var groups=CATEGORIES.map(function(c){
    var items=state.frais.filter(function(i){return i.categorie===c.key;}).slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
    var tot=items.reduce(function(s,i){return s+(Number(i.montant)||0);},0);
@@ -1082,6 +1104,7 @@ function viewFrais(){
      +'<div class="muted2" style="font-size:11px">'+frDate(i.date)+(pd<100?' · déduct. '+fmt((Number(i.montant)||0)*pd/100):'')+(ch?' · '+esc(ch.client):'')+'</div></div>'
      +(receiptIds[i.id]?'<button style="color:var(--cyan);padding:4px" onclick="B.viewReceipt(\''+i.id+'\')">'+ico('image',17)+'</button>':'')
      +'<div style="font-weight:700;white-space:nowrap">'+fmt(i.montant)+'</div>'
+     +'<button style="color:var(--muted);padding:4px" onclick="B.editFrais(\''+i.id+'\')">'+ico('edit',15)+'</button>'
      +'<button style="color:var(--red);padding:4px" onclick="B.delFrais(\''+i.id+'\')">'+ico('trash',15)+'</button></div>';}).join('')
    +'</div>';
  }).join(''):'<p class="muted2" style="text-align:center;font-size:14px;padding:32px 0">Aucun frais enregistré.</p>';
@@ -1152,11 +1175,35 @@ function render(){
  window.scrollTo(0,0);
  if(ui.tab==='devis')B.calc();
  if(ui.tab==='chantiers'&&ui.chantierForm&&ui.editingChantierId)renderChantierPhotos();
+ if(ui.tab==='frais'&&ui.fraisForm)renderFraisPreview();
+}
+/* Affiche l'aperçu du justificatif dans le formulaire Frais : photo en attente (nouveau frais),
+   ticket déjà enregistré (édition), ou rien. Fonction à part pour ne pas devoir tout re-render. */
+function renderFraisPreview(){
+ var box=$('frais_preview'); if(!box)return;
+ if(pendingBlob){
+  var url=URL.createObjectURL(pendingBlob);
+  box.innerHTML='<div class="thumb"><img src="'+url+'"/><div class="del" onclick="B.delPending()">'+ico('x',14)+'</div></div>';
+  return;
+ }
+ if(ui.editingFraisId&&receiptIds[ui.editingFraisId]){
+  var eid=ui.editingFraisId;
+  box.innerHTML='<span class="muted2" style="font-size:12px">Chargement…</span>';
+  idbGet(eid,function(rec){
+   if(ui.editingFraisId!==eid)return; // le formulaire a changé entre-temps
+   if(!rec||!rec.blob){ box.innerHTML=''; return; }
+   var url=URL.createObjectURL(rec.blob);
+   box.innerHTML='<div class="thumb"><img src="'+url+'" onclick="B.viewReceipt(\''+eid+'\')"/><div class="del" onclick="B.delExistingReceipt()">'+ico('x',14)+'</div></div>';
+  });
+  return;
+ }
+ box.innerHTML='';
 }
 
 /* ============ Actions ============ */
 var B={
- setTab:function(t){ if(ui.tab==='devis')B.saveDevis(); ui.tab=t; ui.settings=false; render(); },
+ setTab:function(t){ if(ui.tab==='devis')B.saveDevis(); if(t!=='frais'){ ui.fraisForm=false; ui.editingFraisId=null; pendingBlob=null; } ui.tab=t; ui.settings=false; render(); },
+ setFinanceYear:function(y){ ui.financeYear=Number(y); render(); },
  setCompany:function(v){ state.settings.companyName=v||''; persist(); },
  setTaux:function(v){ state.settings.tauxProvision=Number(v); persist(); var l=$('tauxLbl'); if(l)l.textContent=v+'%'; },
  dedChange:function(i,key){
@@ -1183,7 +1230,7 @@ var B={
    var inp=$('ded_'+i), cont=$('dedact_'+i);
    if(inp)inp.value=deducOf(key); if(cont)cont.innerHTML='';
  },
- toggleForm:function(w){ if(w==='chantier'){ ui.chantierForm=!ui.chantierForm; ui.editingChantierId=null; ui.chantierLignes=[]; if(ui.chantierForm)ui.cStatut='en_cours'; } else {ui.fraisForm=!ui.fraisForm; pendingBlob=null;} render(); },
+ toggleForm:function(w){ if(w==='chantier'){ ui.chantierForm=!ui.chantierForm; ui.editingChantierId=null; ui.chantierLignes=[]; if(ui.chantierForm)ui.cStatut='en_cours'; } else {ui.fraisForm=!ui.fraisForm; ui.editingFraisId=null; pendingBlob=null;} render(); },
  setFilter:function(f){ ui.filter=f; render(); },
  setCStatut:function(s){ ui.cStatut=s; var b=$('c_stat').children; b[0].className='selbtn'+(s==='en_cours'?' active':''); b[1].className='selbtn'+(s==='paye'?' active':''); },
  setFCat:function(k){ ui.fCat=k; },
@@ -1243,6 +1290,7 @@ var B={
    var c=state.clients.filter(function(x){return x.id===clientId;})[0]; if(!c)return;
    var inp=$(ctx+'_client'), idEl=$(ctx+'_clientId');
    if(inp)inp.value=c.nom; if(idEl)idEl.value=c.id;
+   if(ctx==='d'){ var eEl=$('d_email'); if(eEl)eEl.value=c.email||''; }
    B.hideClientSuggest(ctx);
  },
  createClientInline:function(ctx){
@@ -1253,14 +1301,21 @@ var B={
    B.hideClientSuggest(ctx);
  },
  /* Résout le client final au moment d'enregistrer : réutilise l'id choisi via l'autocomplete
-    s'il correspond toujours au texte tapé, sinon retrouve/crée un client sur base du nom. */
+    s'il correspond toujours au texte tapé, sinon retrouve/crée un client sur base du nom.
+    Pour le devis (ctx='d'), en profite pour enregistrer l'email tapé sur la fiche client. */
  resolveClientId:function(ctx,name){
    var idEl=$(ctx+'_clientId'), pickedId=idEl?idEl.value:'';
+   var client=null;
    if(pickedId){
     var picked=state.clients.filter(function(x){return x.id===pickedId;})[0];
-    if(picked&&normName(picked.nom)===normName(name))return picked.id;
+    if(picked&&normName(picked.nom)===normName(name))client=picked;
    }
-   var cl=findOrCreateClient(name); return cl?cl.id:null;
+   if(!client)client=findOrCreateClient(name);
+   if(client&&ctx==='d'){
+    var eEl=$('d_email'), email=eEl?eEl.value.trim():'';
+    if(email&&client.email!==email){ client.email=email; persist(); }
+   }
+   return client?client.id:null;
  },
  setClientSearch:function(v){ ui.clientSearch=v; var box=$('clientRows'); if(box)box.innerHTML=clientRowsHTML(); },
  openClient:function(id){ ui.selectedClientId=id; render(); },
@@ -1315,10 +1370,10 @@ var B={
    currentCPhoto=id;
    var m=$('modal'); m.className='modal'; m.innerHTML='<div class="imgwrap"><span class="muted">Chargement…</span></div>';
    idbGetC(id,function(rec){
-     if(!rec||!rec.blob){ m.innerHTML='<div class="imgwrap"><span class="muted">Photo introuvable.</span></div><div class="bar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button></div>'; return; }
+     if(!rec||!rec.blob){ m.innerHTML='<div class="imgwrap"><span class="muted">Photo introuvable.</span></div><div class="modalbar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button></div>'; return; }
      var url=URL.createObjectURL(rec.blob);
      m.innerHTML='<div class="imgwrap"><img src="'+url+'"/></div>'
-       +'<div class="bar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button>'
+       +'<div class="modalbar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button>'
        +'<button class="btn btn-ghost" style="color:var(--red)" onclick="B.delChantierPhoto(\''+id+'\')">'+ico('trash',17)+'Supprimer</button></div>';
    });
  },
@@ -1335,17 +1390,31 @@ var B={
    if(idEl)idEl.value=id;
    B.hideChantierSuggest();
  },
+ editFrais:function(id){
+   var f=state.frais.filter(function(x){return x.id===id;})[0]; if(!f)return;
+   ui.editingFraisId=id; ui.fCat=f.categorie; ui.fraisForm=true; pendingBlob=null;
+   render();
+   var el=$('view'); if(el)window.scrollTo(0,0);
+ },
  addFrais:function(){
    var lib=$('f_lib').value.trim(), montant=Number($('f_montant').value);
    if(!lib||!montant){alert('Libellé et montant requis.');return;}
-   var id=uid();
+   var date=$('f_date').value||todayISO();
    var chantierId=($('f_chantierId')||{}).value||null;
-   state.frais.unshift({id:id,libelle:lib,montant:montant,date:$('f_date').value||todayISO(),categorie:ui.fCat,chantierId:chantierId||null});
-   persist();
-   var blob=pendingBlob; pendingBlob=null;
-   var finish=function(){ ui.fraisForm=false; render(); };
-   if(blob){ idbPut({id:id,blob:blob,drive:null},function(ok){ if(ok)receiptIds[id]=true; finish(); }); }
-   else finish();
+   if(ui.editingFraisId){
+     var eid=ui.editingFraisId;
+     state.frais=state.frais.map(function(f){return f.id===eid?Object.assign({},f,{libelle:lib,montant:montant,date:date,categorie:ui.fCat,chantierId:chantierId||null}):f;});
+     ui.editingFraisId=null;
+     persist(); ui.fraisForm=false; render();
+   } else {
+     var id=uid();
+     state.frais.unshift({id:id,libelle:lib,montant:montant,date:date,categorie:ui.fCat,chantierId:chantierId||null});
+     persist();
+     var blob=pendingBlob; pendingBlob=null;
+     var finish=function(){ ui.fraisForm=false; render(); };
+     if(blob){ idbPut({id:id,blob:blob,drive:null},function(ok){ if(ok)receiptIds[id]=true; finish(); }); }
+     else finish();
+   }
  },
  delFrais:function(id){ state.frais=state.frais.filter(function(i){return i.id!==id;}); persist(); if(receiptIds[id]){idbDel(id);delete receiptIds[id];delete receiptDrive[id];} render(); },
  /* --- justificatifs --- */
@@ -1355,22 +1424,33 @@ var B={
    var box=$('frais_preview'); if(box)box.innerHTML='<span class="muted2" style="font-size:12px">Compression…</span>';
    compressImage(file,function(blob){
      if(!blob){ if(box)box.innerHTML='<span style="color:var(--red);font-size:12px">Image illisible.</span>'; return; }
-     pendingBlob=blob;
-     var url=URL.createObjectURL(blob);
-     if(box)box.innerHTML='<div class="thumb"><img src="'+url+'"/><div class="del" onclick="B.delPending()">'+ico('x',14)+'</div></div>';
+     if(ui.editingFraisId){
+      var eid=ui.editingFraisId;
+      idbPut({id:eid,blob:blob,drive:null},function(ok){
+       if(ok){ receiptIds[eid]=true; delete receiptDrive[eid]; }
+       renderFraisPreview();
+      });
+     } else {
+      pendingBlob=blob;
+      renderFraisPreview();
+     }
    });
  },
  delPending:function(){ pendingBlob=null; var box=$('frais_preview'); if(box)box.innerHTML=''; },
+ delExistingReceipt:function(){
+   var id=ui.editingFraisId; if(!id)return;
+   idbDel(id,function(){ delete receiptIds[id]; delete receiptDrive[id]; renderFraisPreview(); });
+ },
  viewReceipt:function(id){
    currentReceipt=id;
    var m=$('modal'); m.className='modal'; m.innerHTML='<div class="imgwrap"><span class="muted">Chargement…</span></div>';
    idbGet(id,function(rec){
-     if(!rec||!rec.blob){ m.innerHTML='<div class="imgwrap"><span class="muted">Ticket introuvable.</span></div><div class="bar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button></div>'; return; }
+     if(!rec||!rec.blob){ m.innerHTML='<div class="imgwrap"><span class="muted">Ticket introuvable.</span></div><div class="modalbar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button></div>'; return; }
      receiptDrive[id]=rec.drive||null;
      var url=URL.createObjectURL(rec.blob);
      m.innerHTML='<div class="imgwrap"><img src="'+url+'"/></div>'
-       +'<div class="bar" id="modalDrive">'+B.driveBtnHTML(id)+'</div>'
-       +'<div class="bar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button>'
+       +'<div class="modalbar" id="modalDrive">'+B.driveBtnHTML(id)+'</div>'
+       +'<div class="modalbar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button>'
        +'<button class="btn btn-ghost" style="color:var(--red)" onclick="B.delReceipt(\''+id+'\')">'+ico('trash',17)+'Supprimer</button></div>';
    });
  },
@@ -1437,7 +1517,7 @@ var B={
      return {id:id, libelle:libEl?libEl.value:'', prix:prixEl?(Number(prixEl.value)||0):0};
    });
    var coeff=Number(($('d_coeff')||{}).value)||0;
-   var matTotal=materiel.reduce(function(s,m){return s+m.prix*coeff;},0);
+   var matTotal=round2(materiel.reduce(function(s,m){return s+m.prix*coeff;},0));
    return{
      materiel:materiel, coeff:coeff, matTotal:matTotal,
      heures:Number(($('d_heures')||{}).value)||0,
@@ -1491,6 +1571,7 @@ var B={
  shareDevisPDF:function(){
    var v=B.devisVals(), mo=v.heures*v.tarif, total=v.matTotal+mo+v.depl;
    var client=(($('d_client')||{}).value||'').trim();
+   if(client)B.resolveClientId('d',client);
    var comp=(state.settings.companyName||'').trim();
    var L=[];
    if(comp)L.push({t:comp,size:19,bold:true});
@@ -1535,7 +1616,7 @@ var B={
    if(comp)L.push(q(comp));
    L.push('BOREAS ASSISTANT - Export du '+todayISO());
    L.push('');
-   L.push('RESUME');
+   L.push('RESUME (annee '+f.year+')');
    L.push('CA encaisse'+sep+f.ca);
    L.push('Total frais reels'+sep+f.fraisReel);
    L.push('Frais deductibles'+sep+Math.round(f.fraisDeduc));
@@ -1546,7 +1627,7 @@ var B={
    L.push('CHANTIERS');
    L.push(['Date','Client','Description','Montant','Statut'].join(sep));
    state.chantiers.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(c){
-     L.push([c.date,q(c.client),q(c.description),c.montant,c.statut==='paye'?'Paye':'En cours'].join(sep));
+     L.push([c.date,q(c.client),q(c.description),round2(c.montant),c.statut==='paye'?'Paye':'En cours'].join(sep));
    });
    var chantiersAvecLignes=state.chantiers.filter(function(c){return c.lignes&&c.lignes.length;});
    if(chantiersAvecLignes.length){
@@ -1555,7 +1636,7 @@ var B={
     L.push(['Date','Client','Ligne','Montant'].join(sep));
     chantiersAvecLignes.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(c){
       c.lignes.forEach(function(l){
-        L.push([c.date,q(c.client),q(l.libelle),l.montant].join(sep));
+        L.push([c.date,q(c.client),q(l.libelle),round2(l.montant)].join(sep));
       });
     });
    }
@@ -1565,7 +1646,7 @@ var B={
    state.frais.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(i){
      var pd=deducOf(i.categorie);
      var ch=i.chantierId?chantierById(i.chantierId):null;
-     L.push([i.date,q(i.libelle),q(i.categorie),i.montant,pd,Math.round((Number(i.montant)||0)*pd/100),q(ch?ch.client:'')].join(sep));
+     L.push([i.date,q(i.libelle),q(i.categorie),round2(i.montant),pd,round2((Number(i.montant)||0)*pd/100),q(ch?ch.client:'')].join(sep));
    });
    var csv='﻿'+L.join('\r\n');
    try{
@@ -1579,9 +1660,11 @@ var B={
  },
  recapPDF:function(){
    var f=finance(); var comp=(state.settings.companyName||'').trim();
+   var chYr=state.chantiers.filter(function(c){return(c.date||'').slice(0,4)===f.year;});
+   var frYr=state.frais.filter(function(fr){return(fr.date||'').slice(0,4)===f.year;});
    var L=[];
    if(comp)L.push({t:comp,size:19,bold:true});
-   L.push({t:'RÉCAPITULATIF',size:13,bold:true,color:PDFC.cyan,gap:comp?10:0});
+   L.push({t:'RÉCAPITULATIF — ANNÉE '+f.year,size:13,bold:true,color:PDFC.cyan,gap:comp?10:0});
    L.push({type:'rule',gap:8});
    L.push({t:'Au '+frDate(todayISO()),size:11,gap:8});
    var rows=[
@@ -1595,9 +1678,9 @@ var B={
    L.push({type:'rule',gap:12});
    L.push({type:'totalbox',left:'RESTE EN POCHE',right:euroPDF(f.reste),size:15,gap:6,valueX:340});
    L.push({t:'Plafond franchise TVA : '+euroPDF(f.ca)+' / '+euroPDF(TVA_LIMIT),size:11,color:PDFC.muted,gap:20});
-   L.push({t:'Chantiers payés : '+state.chantiers.filter(function(c){return c.statut==='paye';}).length,size:11,color:PDFC.muted,gap:6});
-   L.push({t:'Chantiers en cours : '+state.chantiers.filter(function(c){return c.statut!=='paye';}).length,size:11,color:PDFC.muted});
-   L.push({t:'Frais enregistrés : '+state.frais.length,size:11,color:PDFC.muted});
+   L.push({t:'Chantiers payés ('+f.year+') : '+chYr.filter(function(c){return c.statut==='paye';}).length,size:11,color:PDFC.muted,gap:6});
+   L.push({t:'Chantiers en cours ('+f.year+') : '+chYr.filter(function(c){return c.statut!=='paye';}).length,size:11,color:PDFC.muted});
+   L.push({t:'Frais enregistrés ('+f.year+') : '+frYr.length,size:11,color:PDFC.muted});
    sharePDF(makePDF(L),'recap-'+todayISO()+'.pdf','Recapitulatif'+(comp?' - '+comp:''),'Recapitulatif comptable'+(comp?' - '+comp:''));
  }
 };
