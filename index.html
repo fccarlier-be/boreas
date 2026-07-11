@@ -1076,13 +1076,15 @@ function viewFrais(){
   +CATEGORIES.map(function(c){var pd=deducOf(c.key);return '<option value="'+esc(c.key)+'"'+(ui.fCat===c.key?' selected':'')+'>'+esc(c.key)+(pd<100?' — '+pd+'% déduct.':'')+'</option>';}).join('')
   +'</select></div>'
   +'<div class="field"><span class="label">Chantier concerné (optionnel)</span>'+chantierFieldHTML(editingCh?(editingCh.client+(editingCh.description?' · '+editingCh.description:'')):'',editing?(editing.chantierId||''):'')+'</div>'
-  +'<div class="field"><span class="label">Justificatif (ticket)</span>'
+  +'<div class="field"><span class="label">Justificatifs (photos)</span>'
   +'<input type="file" id="capInput" accept="image/*" capture="environment" style="display:none" onchange="B.onPhoto(this)"/>'
-  +'<input type="file" id="upInput" accept="image/*" style="display:none" onchange="B.onPhoto(this)"/>'
+  +'<input type="file" id="upInput" accept="image/*"'+(editing?' multiple':'')+' style="display:none" onchange="B.onPhoto(this)"/>'
   +'<div class="row">'
   +'<button class="btn btn-ghost" style="flex:1" onclick="document.getElementById(\'capInput\').click()">'+ico('camera',18,'var(--cyan)')+'Prendre en photo</button>'
   +'<button class="btn btn-ghost" style="flex:1" onclick="document.getElementById(\'upInput\').click()">'+ico('image',18,'var(--cyan)')+'Galerie</button></div>'
-  +'<div id="frais_preview" style="margin-top:10px"></div></div>'
+  +'<div id="frais_preview" style="margin-top:10px'+(editing?';display:flex;flex-wrap:wrap;gap:8px':'')+'"></div>'
+  +(editing?'':'<p class="muted2" style="font-size:10px;margin-top:6px">Une seule photo possible avant le premier enregistrement — ouvre à nouveau ce frais après l\'avoir créé pour en ajouter d\'autres.</p>')
+  +'</div>'
   +'<button class="btn btn-primary" onclick="B.addFrais()">'+(editing?'Enregistrer les modifications':'Enregistrer le frais')+'</button></div>'):'';
  var groups=CATEGORIES.map(function(c){
    var items=state.frais.filter(function(i){return i.categorie===c.key;}).slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
@@ -1099,10 +1101,13 @@ function viewFrais(){
    +(pd<100?'<div class="muted2" style="font-size:10px">déduct. '+fmt(g.tot*pd/100)+'</div>':'')+'</div></div>'
    +g.items.map(function(i){
      var ch=i.chantierId?chantierById(i.chantierId):null;
+     var items=fraisPhotoItems(i), nph=items.length;
+     var photoBtn=nph===1?('<button style="color:var(--cyan);padding:4px" onclick="B.'+(items[0].kind==='legacy'?'viewReceipt(\''+items[0].id+'\')':'viewFraisPhoto(\'extra\',\''+items[0].id+'\')')+'">'+ico('image',17)+'</button>')
+       :nph>1?('<button style="color:var(--cyan);padding:4px;display:flex;align-items:center;gap:2px;font-size:12px" onclick="B.editFrais(\''+i.id+'\')">'+ico('image',15)+nph+'</button>'):'';
      return '<div class="card pop mb2" style="padding:12px;display:flex;align-items:center;gap:10px">'
      +'<div style="flex:1;min-width:0"><div class="trunc" style="font-size:14px;font-weight:500">'+esc(i.libelle)+'</div>'
      +'<div class="muted2" style="font-size:11px">'+frDate(i.date)+(pd<100?' · déduct. '+fmt((Number(i.montant)||0)*pd/100):'')+(ch?' · '+esc(ch.client):'')+'</div></div>'
-     +(receiptIds[i.id]?'<button style="color:var(--cyan);padding:4px" onclick="B.viewReceipt(\''+i.id+'\')">'+ico('image',17)+'</button>':'')
+     +photoBtn
      +'<div style="font-weight:700;white-space:nowrap">'+fmt(i.montant)+'</div>'
      +'<button style="color:var(--muted);padding:4px" onclick="B.editFrais(\''+i.id+'\')">'+ico('edit',15)+'</button>'
      +'<button style="color:var(--red);padding:4px" onclick="B.delFrais(\''+i.id+'\')">'+ico('trash',15)+'</button></div>';}).join('')
@@ -1177,8 +1182,15 @@ function render(){
  if(ui.tab==='chantiers'&&ui.chantierForm&&ui.editingChantierId)renderChantierPhotos();
  if(ui.tab==='frais'&&ui.fraisForm)renderFraisPreview();
 }
-/* Affiche l'aperçu du justificatif dans le formulaire Frais : photo en attente (nouveau frais),
-   ticket déjà enregistré (édition), ou rien. Fonction à part pour ne pas devoir tout re-render. */
+/* Galerie de justificatifs du formulaire Frais : combine l'ancien "ticket" unique (magasin
+   'receipts', compatibilité avec les frais déjà enregistrés) et les photos additionnelles
+   (magasin 'cphotos', même mécanique que les photos de chantier) en une seule grille. */
+function fraisPhotoItems(f){
+ var items=[];
+ if(receiptIds[f.id])items.push({kind:'legacy',id:f.id});
+ (f.photos||[]).forEach(function(pid){ items.push({kind:'extra',id:pid}); });
+ return items;
+}
 function renderFraisPreview(){
  var box=$('frais_preview'); if(!box)return;
  if(pendingBlob){
@@ -1186,18 +1198,27 @@ function renderFraisPreview(){
   box.innerHTML='<div class="thumb"><img src="'+url+'"/><div class="del" onclick="B.delPending()">'+ico('x',14)+'</div></div>';
   return;
  }
- if(ui.editingFraisId&&receiptIds[ui.editingFraisId]){
-  var eid=ui.editingFraisId;
-  box.innerHTML='<span class="muted2" style="font-size:12px">Chargement…</span>';
-  idbGet(eid,function(rec){
-   if(ui.editingFraisId!==eid)return; // le formulaire a changé entre-temps
-   if(!rec||!rec.blob){ box.innerHTML=''; return; }
-   var url=URL.createObjectURL(rec.blob);
-   box.innerHTML='<div class="thumb"><img src="'+url+'" onclick="B.viewReceipt(\''+eid+'\')"/><div class="del" onclick="B.delExistingReceipt()">'+ico('x',14)+'</div></div>';
+ if(!ui.editingFraisId){ box.innerHTML=''; return; }
+ var f=state.frais.filter(function(x){return x.id===ui.editingFraisId;})[0];
+ if(!f){ box.innerHTML=''; return; }
+ var items=fraisPhotoItems(f);
+ if(!items.length){ box.innerHTML='<p class="muted2" style="font-size:11px">Aucune photo pour ce frais.</p>'; return; }
+ box.innerHTML=items.map(function(it){
+  var url=cphotoUrls[it.id];
+  if(url)return '<div class="thumb"><img src="'+url+'" onclick="B.viewFraisPhoto(\''+it.kind+'\',\''+it.id+'\')"/><div class="del" onclick="B.delFraisPhoto(\''+it.kind+'\',\''+it.id+'\')">'+ico('x',14)+'</div></div>';
+  (it.kind==='legacy'?idbGet:idbGetC)(it.id,function(rec){
+   if(rec&&rec.blob){ cphotoUrls[it.id]=URL.createObjectURL(rec.blob); renderFraisPreview(); }
   });
-  return;
- }
- box.innerHTML='';
+  return '<div class="thumb" style="width:88px;height:88px;display:flex;align-items:center;justify-content:center"><span class="muted2" style="font-size:10px">…</span></div>';
+ }).join('');
+}
+function addFraisPhotoBlob(blob){
+ var f=state.frais.filter(function(x){return x.id===ui.editingFraisId;})[0]; if(!f||!blob)return;
+ var id=uid();
+ idbPutC({id:id,chantierId:null,fraisId:f.id,blob:blob,drive:null},function(ok){
+  if(!ok){ toast('Impossible d\'enregistrer la photo.'); return; }
+  f.photos=(f.photos||[]).concat([id]); persist(); renderFraisPreview();
+ });
 }
 
 /* ============ Actions ============ */
@@ -1416,30 +1437,54 @@ var B={
      else finish();
    }
  },
- delFrais:function(id){ state.frais=state.frais.filter(function(i){return i.id!==id;}); persist(); if(receiptIds[id]){idbDel(id);delete receiptIds[id];delete receiptDrive[id];} render(); },
+ delFrais:function(id){
+   var f=state.frais.filter(function(i){return i.id===id;})[0];
+   state.frais=state.frais.filter(function(i){return i.id!==id;}); persist();
+   if(receiptIds[id]){idbDel(id);delete receiptIds[id];delete receiptDrive[id];}
+   if(f&&f.photos&&f.photos.length){ f.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; }); }
+   render();
+ },
  /* --- justificatifs --- */
  onPhoto:function(input){
-   var file=input.files&&input.files[0]; input.value='';
-   if(!file)return;
+   var files=input.files?Array.prototype.slice.call(input.files):[]; input.value='';
+   if(!files.length)return;
    var box=$('frais_preview'); if(box)box.innerHTML='<span class="muted2" style="font-size:12px">Compression…</span>';
-   compressImage(file,function(blob){
+   if(ui.editingFraisId){
+    (function next(){
+     if(!files.length){ renderFraisPreview(); return; }
+     var file=files.shift();
+     compressImage(file,function(blob){ if(blob)addFraisPhotoBlob(blob); next(); });
+    })();
+   } else {
+    compressImage(files[0],function(blob){
      if(!blob){ if(box)box.innerHTML='<span style="color:var(--red);font-size:12px">Image illisible.</span>'; return; }
-     if(ui.editingFraisId){
-      var eid=ui.editingFraisId;
-      idbPut({id:eid,blob:blob,drive:null},function(ok){
-       if(ok){ receiptIds[eid]=true; delete receiptDrive[eid]; }
-       renderFraisPreview();
-      });
-     } else {
-      pendingBlob=blob;
-      renderFraisPreview();
-     }
-   });
+     pendingBlob=blob;
+     renderFraisPreview();
+    });
+   }
  },
  delPending:function(){ pendingBlob=null; var box=$('frais_preview'); if(box)box.innerHTML=''; },
- delExistingReceipt:function(){
-   var id=ui.editingFraisId; if(!id)return;
-   idbDel(id,function(){ delete receiptIds[id]; delete receiptDrive[id]; renderFraisPreview(); });
+ delFraisPhoto:function(kind,id){
+   var f=state.frais.filter(function(x){return x.id===ui.editingFraisId;})[0]; if(!f)return;
+   var cleanup=function(){ if(cphotoUrls[id]){URL.revokeObjectURL(cphotoUrls[id]);delete cphotoUrls[id];} renderFraisPreview(); if(currentCPhoto===id)B.closeModal(); };
+   if(kind==='legacy'){
+    idbDel(id,function(){ delete receiptIds[id]; delete receiptDrive[id]; cleanup(); });
+   } else {
+    idbDelC(id,function(){ f.photos=(f.photos||[]).filter(function(p){return p!==id;}); persist(); cleanup(); });
+   }
+ },
+ viewFraisPhoto:function(kind,id){
+   currentCPhoto=id;
+   var m=$('modal'); m.className='modal'; m.innerHTML='<div class="imgwrap"><span class="muted">Chargement…</span></div>';
+   (kind==='legacy'?idbGet:idbGetC)(id,function(rec){
+    if(!rec||!rec.blob){ m.innerHTML='<div class="imgwrap"><span class="muted">Photo introuvable.</span></div><div class="modalbar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button></div>'; return; }
+    if(kind==='legacy')receiptDrive[id]=rec.drive||null;
+    var url=URL.createObjectURL(rec.blob);
+    m.innerHTML='<div class="imgwrap"><img src="'+url+'"/></div>'
+      +(kind==='legacy'?'<div class="modalbar" id="modalDrive">'+B.driveBtnHTML(id)+'</div>':'')
+      +'<div class="modalbar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Fermer</button>'
+      +'<button class="btn btn-ghost" style="color:var(--red)" onclick="B.delFraisPhoto(\''+kind+'\',\''+id+'\')">'+ico('trash',17)+'Supprimer</button></div>';
+   });
  },
  viewReceipt:function(id){
    currentReceipt=id;
