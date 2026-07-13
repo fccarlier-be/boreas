@@ -64,6 +64,7 @@ select.input{appearance:none;-webkit-appearance:none;padding-right:38px;backgrou
 .selbtn{border:1px solid var(--border);border-radius:12px;padding:11px 8px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:600;color:var(--muted);min-width:0;overflow:hidden;}
 .selbtn.active{border-color:var(--cyan);background:rgba(6,182,212,.12);color:#67e8f9;}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;}
 .stat{flex:1;min-width:0;}
 .stat .v{font-size:20px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .bar{height:8px;border-radius:999px;background:#22304a;overflow:hidden;}
@@ -160,6 +161,7 @@ function ico(name,size,color,stroke){
 
 /* ============ Constants & seed ============ */
 var TVA_LIMIT=25000;
+var RELANCE_DAYS=14;   // nb de jours après l'envoi d'une facture avant de suggérer une relance
 var DRIVE_CLIENT_ID='376867033640-00ni2l2s06kgol1hjrfs75s5fjert4v5.apps.googleusercontent.com'; // ID client OAuth (public, restreint à l'origine autorisée)
 var CATEGORIES=[
  {key:'Matériel revendu',icon:'box',color:'#22d3ee',deduc:100},
@@ -205,6 +207,7 @@ var state=(function(){
  return JSON.parse(JSON.stringify(SEED));
 })();
 if(!state.settings)state.settings={tauxProvision:55};
+if(!state.settings.nextInvoiceNumber)state.settings.nextInvoiceNumber=1;
 if(!state.devis)state.devis=SEED.devis;
 /* Migration : l'ancien champ unique "prixAchat" devient une liste de matériel détaillée.
    Fonction réutilisable (appelée au démarrage ET après un import de sauvegarde,
@@ -229,7 +232,7 @@ function persist(keepTs){ if(!keepTs){ state.updatedAt=Date.now(); scheduleAutoS
 /* ============ Clients ============ */
 if(!state.clients)state.clients=[];
 function normName(s){ return String(s||'').trim().toLowerCase().replace(/\s+/g,' '); }
-function findClientByName(name){ var n=normName(name); if(!n)return null; var f=state.clients.filter(function(c){return normName(c.nom)===n;}); return f[0]||null; }
+function findClientByName(name){ var n=normName(name); if(!n)return null; var f=state.clients.filter(function(c){return !c.deletedAt&&normName(c.nom)===n;}); return f[0]||null; }
 function findOrCreateClient(name){
  name=String(name||'').trim(); if(!name)return null;
  var existing=findClientByName(name); if(existing)return existing;
@@ -246,12 +249,41 @@ function migrateClientLinks(){
  return changed;
 }
 if(migrateClientLinks())persist(true);
+/* Purge définitive et silencieuse des éléments de la corbeille datant de plus de 30 jours */
+function autoPurgeTrash(){
+ var cutoff=Date.now()-30*86400000, changed=false;
+ var keepCh=[];
+ state.chantiers.forEach(function(c){
+  if(c.deletedAt&&c.deletedAt<cutoff){
+   changed=true;
+   if(c.photos&&c.photos.length)c.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; });
+   state.frais.forEach(function(f){ if(f.chantierId===c.id)f.chantierId=null; });
+  } else keepCh.push(c);
+ });
+ state.chantiers=keepCh;
+ var keepFr=[];
+ state.frais.forEach(function(f){
+  if(f.deletedAt&&f.deletedAt<cutoff){
+   changed=true;
+   idbDel(f.id); delete receiptIds[f.id]; delete receiptDrive[f.id];
+   if(f.photos&&f.photos.length)f.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; });
+  } else keepFr.push(f);
+ });
+ state.frais=keepFr;
+ var keepCl=[];
+ state.clients.forEach(function(c){
+  if(c.deletedAt&&c.deletedAt<cutoff){ changed=true; state.chantiers.forEach(function(ch){ if(ch.clientId===c.id)ch.clientId=null; }); }
+  else keepCl.push(c);
+ });
+ state.clients=keepCl;
+ if(changed)persist(true);
+}
 function clientStats(id){
- var list=state.chantiers.filter(function(c){return c.clientId===id;});
+ var list=state.chantiers.filter(function(c){return c.clientId===id&&!c.deletedAt;});
  var total=round2(list.reduce(function(s,c){return s+(Number(c.montant)||0);},0));
  var sorted=list.slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
  var chIds=list.map(function(c){return c.id;});
- var fraisTotal=round2(state.frais.filter(function(f){return f.chantierId&&chIds.indexOf(f.chantierId)>-1;}).reduce(function(s,f){return s+(Number(f.montant)||0);},0));
+ var fraisTotal=round2(state.frais.filter(function(f){return !f.deletedAt&&f.chantierId&&chIds.indexOf(f.chantierId)>-1;}).reduce(function(s,f){return s+(Number(f.montant)||0);},0));
  return{count:list.length,total:total,last:sorted[0]||null,fraisTotal:fraisTotal,marge:round2(total-fraisTotal)};
 }
 if(!state.updatedAt){ state.updatedAt=Date.now(); persist(true); }
@@ -294,6 +326,7 @@ idbKeys(function(keys){keys.forEach(function(k){receiptIds[k]=true;}); if(ui&&ui
 var cphotoUrls={};                       // { photoId: objectURL } — cache d'affichage en mémoire
 var cphotoIds={};                        // { photoId: true } — quelles photos de chantier existent déjà localement
 idbKeysC(function(keys){keys.forEach(function(k){cphotoIds[k]=true;});});
+autoPurgeTrash();
 
 /* Compression via canvas (max 1400px, JPEG 0.7) */
 function compressImage(file,cb){
@@ -358,6 +391,7 @@ function driveEnsureFolder(token,cb){
 }
 var pendingBlob=null;                     // ticket capturé mais frais pas encore enregistré
 var currentReceipt=null;                  // id du ticket ouvert dans la modale
+var pendingConfirm=null;                  // callback en attente de la modale de confirmation
 var currentCPhoto=null;                   // id de la photo de chantier ouverte dans la modale
 /* Galerie plein écran swipeable (photos de chantier ou de frais) */
 var galleryCtx=null;                      // 'chantier' | 'frais'
@@ -367,6 +401,23 @@ var galleryIndex=0;
 
 /* ============ Photos de chantier (plusieurs photos par chantier, sauvegarde immédiate) ============ */
 function chantierById(id){ for(var i=0;i<state.chantiers.length;i++)if(state.chantiers[i].id===id)return state.chantiers[i]; return null; }
+/* Génère une image de substitution (canvas) pour illustrer les photos dans les données de démo */
+function demoImageBlob(label,color,cb){
+ try{
+  var canvas=document.createElement('canvas'); canvas.width=600; canvas.height=450;
+  var ctx=canvas.getContext('2d');
+  ctx.fillStyle=color; ctx.fillRect(0,0,600,450);
+  ctx.fillStyle='#ffffff'; ctx.font='bold 42px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(label,300,225);
+  canvas.toBlob(function(blob){ cb(blob); },'image/jpeg',0.85);
+ }catch(e){ cb(null); }
+}
+/* Le client visé par un chantier est-il une entreprise ? (détermine si Peppol/facture électronique s'applique) */
+function clientIsEntreprise(clientId){
+ if(!clientId)return false;
+ var c=state.clients.filter(function(x){return x.id===clientId;})[0];
+ return !!(c&&c.typeClient==='entreprise');
+}
 function renderChantierPhotos(){
  var box=$('c_photos'); if(!box)return;
  var c=chantierById(ui.editingChantierId); if(!c){box.innerHTML='';return;}
@@ -391,7 +442,7 @@ function addChantierPhotoBlob(blob){
 }
 
 /* ---- Synchronisation complète des données (newest-wins) ---- */
-function backupObj(map,cmap){ return {updatedAt:state.updatedAt,chantiers:state.chantiers,frais:state.frais,devis:state.devis,clients:state.clients,settings:{tauxProvision:state.settings.tauxProvision,deduc:state.settings.deduc,companyName:state.settings.companyName},receipts:map||{},cphotos:cmap||{}}; }
+function backupObj(map,cmap){ return {updatedAt:state.updatedAt,chantiers:state.chantiers,frais:state.frais,devis:state.devis,clients:state.clients,settings:{tauxProvision:state.settings.tauxProvision,deduc:state.settings.deduc,companyName:state.settings.companyName,nextInvoiceNumber:state.settings.nextInvoiceNumber},receipts:map||{},cphotos:cmap||{}}; }
 /* Construit la table fraisId -> idDriveDuTicket depuis IndexedDB */
 function gatherReceipts(cb){
  idbKeys(function(keys){
@@ -443,7 +494,13 @@ function applyRemote(r){
  if(r.frais)state.frais=r.frais;
  if(r.devis)state.devis=migrateDevis(r.devis);
  if(r.clients)state.clients=r.clients;
- if(r.settings){ if(r.settings.tauxProvision!=null)state.settings.tauxProvision=r.settings.tauxProvision; if(r.settings.deduc)state.settings.deduc=r.settings.deduc; if(r.settings.companyName!=null)state.settings.companyName=r.settings.companyName; }
+ if(r.settings){
+  if(r.settings.tauxProvision!=null)state.settings.tauxProvision=r.settings.tauxProvision;
+  if(r.settings.deduc)state.settings.deduc=r.settings.deduc;
+  if(r.settings.companyName!=null)state.settings.companyName=r.settings.companyName;
+  // le compteur de n° de facture ne doit jamais reculer (évite les doublons entre appareils)
+  if(r.settings.nextInvoiceNumber!=null)state.settings.nextInvoiceNumber=Math.max(state.settings.nextInvoiceNumber||1,r.settings.nextInvoiceNumber);
+ }
  state.updatedAt=r.updatedAt||Date.now();
  migrateClientLinks();
  persist(true);
@@ -633,7 +690,7 @@ function fullBackupBuild(cb){
     chantiers:state.chantiers, frais:state.frais, devis:state.devis, clients:state.clients,
     settings:{
      companyName:state.settings.companyName, tauxProvision:state.settings.tauxProvision,
-     deduc:state.settings.deduc, driveClientId:state.settings.driveClientId
+     deduc:state.settings.deduc, driveClientId:state.settings.driveClientId, nextInvoiceNumber:state.settings.nextInvoiceNumber
     },
     receipts:receipts, cphotos:cphotos
    });
@@ -659,7 +716,7 @@ function exportFullBackup(silent){
 }
 function importFullBackup(file){
  if(!file)return;
- if(!confirm('Importer cette sauvegarde va REMPLACER toutes les données actuelles de l\'appli sur cet appareil (chantiers, frais, devis, photos, tickets). Continuer ?'))return;
+ B.askConfirm('Importer cette sauvegarde va REMPLACER toutes les données actuelles de l\'appli sur cet appareil (chantiers, frais, devis, photos, tickets). Continuer ?',function(){
  var reader=new FileReader();
  reader.onload=function(){
   var data; try{data=JSON.parse(String(reader.result));}catch(e){ alert('Fichier invalide ou corrompu.'); return; }
@@ -674,6 +731,7 @@ function importFullBackup(file){
    state.settings.tauxProvision=data.settings.tauxProvision!=null?data.settings.tauxProvision:55;
    state.settings.deduc=data.settings.deduc||{};
    if(data.settings.driveClientId)state.settings.driveClientId=data.settings.driveClientId;
+   if(data.settings.nextInvoiceNumber!=null)state.settings.nextInvoiceNumber=Math.max(state.settings.nextInvoiceNumber||1,data.settings.nextInvoiceNumber);
   }
   state.updatedAt=data.updatedAt||Date.now();
   migrateClientLinks();
@@ -711,6 +769,7 @@ function importFullBackup(file){
  };
  reader.onerror=function(){ alert('Lecture du fichier impossible.'); };
  reader.readAsText(file);
+ });
 }
 function backupStatusText(){
  var l=state.settings.lastLocalBackup;
@@ -728,7 +787,7 @@ function daysSinceLastProtection(){
 function euroPDF(n){ n=Math.round((Number(n)||0)*100)/100; var s=n.toFixed(2).replace('.',','); var p=s.split(','); p[0]=p[0].replace(/\B(?=(\d{3})+(?!\d))/g,' '); return p.join(',')+' EUR'; }
 function pdfEsc(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)').replace(/[^\x00-\xFF]/g,function(c){return c==='€'?'EUR':(c==='’'||c==='‘')?"'":(c==='–'||c==='—')?'-':'?';}); }
 /* Palette reprise du thème de l'app (cyan/gris), adaptée pour un fond blanc imprimable */
-var PDFC={dark:[0.06,0.09,0.16],muted:[0.42,0.47,0.55],cyan:[0.031,0.569,0.698],light:[0.90,0.92,0.95],white:[1,1,1]};
+var PDFC={dark:[0.06,0.09,0.16],muted:[0.42,0.47,0.55],cyan:[0.031,0.569,0.698],light:[0.90,0.92,0.95],white:[1,1,1],green:[0.063,0.725,0.506]};
 /* Moteur de mise en page : traite une liste d'éléments (text/row/itemrow/rule/totalbox)
    du haut vers le bas de la page, en gérant couleurs, filets et blocs mis en évidence. */
 function makePDF(ops){
@@ -793,8 +852,8 @@ function availableYears(){
 }
 function finance(year){
  var yr=String(year||ui.financeYear||new Date().getFullYear());   // franchise TVA (art. 56bis) : seuil ANNUEL, année civile
- var chantiersYr=state.chantiers.filter(function(c){return c.statut==='paye'&&(c.date||'').slice(0,4)===yr;});
- var fraisYr=state.frais.filter(function(f){return(f.date||'').slice(0,4)===yr;});
+ var chantiersYr=state.chantiers.filter(function(c){return !c.deletedAt&&c.statut==='paye'&&(c.date||'').slice(0,4)===yr;});
+ var fraisYr=state.frais.filter(function(f){return !f.deletedAt&&(f.date||'').slice(0,4)===yr;});
  var ca=round2(chantiersYr.reduce(function(s,c){return s+(Number(c.montant)||0);},0));
  var fraisReel=round2(fraisYr.reduce(function(s,f){return s+(Number(f.montant)||0);},0));
  var fraisDeduc=round2(fraisYr.reduce(function(s,f){return s+(Number(f.montant)||0)*(deducOf(f.categorie)/100);},0));
@@ -839,6 +898,20 @@ function backupBanner(){
  +'<p class="muted" style="font-size:12px;margin-top:2px">Exporte une sauvegarde locale ou synchronise ton Drive pour ne pas risquer de perdre tes données.</p>'
  +'<button class="btn btn-primary" style="margin-top:10px;padding:9px 12px;font-size:12px" onclick="B.setTab(\'settings\')">Aller aux réglages</button></div></div></div>';
 }
+function relanceBanner(){
+ var list=state.chantiers.filter(function(c){
+  if(c.deletedAt||c.statut!=='facture'||!c.factureEnvoyeeLe)return false;
+  var j=Math.floor((Date.now()-new Date(c.factureEnvoyeeLe+'T00:00').getTime())/86400000);
+  return j>=RELANCE_DAYS;
+ });
+ if(!list.length)return '';
+ return '<div class="card pad mb3" style="border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.06)">'
+ +'<div class="row" style="align-items:flex-start;gap:10px">'
+ +'<div class="icobox" style="width:34px;height:34px;background:rgba(239,68,68,.15);color:var(--red);flex-shrink:0">'+ico('send',18)+'</div>'
+ +'<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">'+list.length+' facture'+(list.length>1?'s':'')+' en attente de paiement</div>'
+ +'<p class="muted" style="font-size:12px;margin-top:2px">Envoyée'+(list.length>1?'s':'')+' depuis plus de '+RELANCE_DAYS+' jours, sans paiement enregistré — une relance est peut-être nécessaire.</p>'
+ +'<button class="btn btn-primary" style="margin-top:10px;padding:9px 12px;font-size:12px" onclick="B.setTab(\'chantiers\');B.setFilter(\'facture\')">Voir les chantiers</button></div></div></div>';
+}
 function viewDashboard(){
  var f=finance();
  return ''
@@ -847,6 +920,7 @@ function viewDashboard(){
  +'<div><h1 style="line-height:1.1">'+(state.settings.companyName?esc(state.settings.companyName):'Boreas Assistant')+'</h1><p class="muted" style="font-size:12px">Indépendant compl. · Franchise TVA</p></div></div>'
  +'<button class="btn btn-ghost" style="padding:10px;border-radius:12px" onclick="B.setTab(\'settings\')">'+ico('gear',20)+'</button></div>'
  +backupBanner()
+ +relanceBanner()
  +'<div class="card pad mb3">'
  +'<div class="between mb1"><span style="font-weight:600;font-size:14px">Plafond franchise TVA</span>'
  +'<select id="finYearSel" onchange="B.setFinanceYear(this.value)" style="background:var(--card2);color:var(--muted2);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:11px">'
@@ -879,10 +953,13 @@ function ligneRows(lignes){
  }).join('');
 }
 function ligneSum(lignes){ return round2(lignes.reduce(function(s,l){return s+(Number(l.montant)||0);},0)); }
-/* Badge "Payé / En cours" — factorisé (répété 3x auparavant dans les vues chantiers/clients) */
+/* Badge de statut chantier — factorisé, utilisé partout (liste chantiers, fiches clients) */
+function statutLabel(statut){ return statut==='paye'?'Payé':statut==='facture'?'Facturé':'En cours'; }
 function statutChip(statut){
- var paid=statut==='paye';
- return '<span class="chip" style="'+(paid?'background:rgba(16,185,129,.15);color:var(--green)':'background:rgba(245,158,11,.15);color:var(--orange)')+'">'+(paid?'Payé':'En cours')+'</span>';
+ var style=statut==='paye'?'background:rgba(16,185,129,.15);color:var(--green)'
+   :statut==='facture'?'background:rgba(6,182,212,.15);color:var(--cyan)'
+   :'background:rgba(245,158,11,.15);color:var(--orange)';
+ return '<span class="chip" style="'+style+'">'+statutLabel(statut)+'</span>';
 }
 /* ============ Champ client avec autocomplétion (chantiers + devis) ============ */
 /* ctx = 'c' (chantier) ou 'd' (devis) — préfixe des ids DOM du champ concerné */
@@ -897,7 +974,7 @@ function clientFieldHTML(ctx,name,clientId){
 function clientSuggestHTML(query,ctx){
  var norm=normName(query);
  if(!norm)return '';
- var matches=state.clients.filter(function(c){return normName(c.nom).indexOf(norm)>-1;}).slice(0,5);
+ var matches=state.clients.filter(function(c){return !c.deletedAt&&normName(c.nom).indexOf(norm)>-1;}).slice(0,5);
  var exact=matches.some(function(c){return normName(c.nom)===norm;});
  var rows=matches.map(function(c){
   return '<div class="suggestrow" onmousedown="B.pickClient(\''+ctx+'\',\''+c.id+'\')">'+esc(c.nom)+(c.telephone?' <span class="muted2" style="font-size:11px">· '+esc(c.telephone)+'</span>':'')+'</div>';
@@ -917,7 +994,7 @@ function chantierFieldHTML(name,chantierId){
 function chantierSuggestHTML(query){
  var norm=normName(query);
  var list=state.chantiers.filter(function(c){
-   return !norm||normName(c.client).indexOf(norm)>-1||normName(c.description||'').indexOf(norm)>-1;
+   return !c.deletedAt&&(!norm||normName(c.client).indexOf(norm)>-1||normName(c.description||'').indexOf(norm)>-1);
  }).slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');}).slice(0,6);
  if(!list.length)return '<div class="suggestrow muted2" style="cursor:default">Aucun chantier trouvé.</div>';
  return list.map(function(c){
@@ -926,12 +1003,13 @@ function chantierSuggestHTML(query){
 }
 function clientRowsHTML(){
  var q=normName(ui.clientSearch);
- var list=state.clients.filter(function(c){return !q||normName(c.nom).indexOf(q)>-1;}).slice().sort(function(a,b){return a.nom.localeCompare(b.nom,'fr');});
+ var list=state.clients.filter(function(c){return !c.deletedAt&&(!q||normName(c.nom).indexOf(q)>-1);}).slice().sort(function(a,b){return a.nom.localeCompare(b.nom,'fr');});
  if(!list.length)return '<p class="muted2" style="text-align:center;font-size:14px;padding:32px 0">Aucun client'+(q?' trouvé':'')+'. Les fiches se créent automatiquement depuis un chantier ou un devis.</p>';
  return list.map(function(c){
   var st=clientStats(c.id);
   return '<div class="card listitem pop mb2" style="cursor:pointer" onclick="B.openClient(\''+c.id+'\')"><div class="between" style="align-items:flex-start">'
-  +'<div style="flex:1;min-width:0"><div style="font-weight:600" class="trunc">'+esc(c.nom)+'</div>'
+  +'<div style="flex:1;min-width:0"><div class="row" style="align-items:center;gap:6px"><span style="font-weight:600" class="trunc">'+esc(c.nom)+'</span>'
+  +(c.typeClient==='entreprise'?'<span class="chip" style="background:rgba(6,182,212,.15);color:var(--cyan);flex-shrink:0">Entreprise</span>':'')+'</div>'
   +(c.telephone?'<p class="muted2" style="font-size:11px;margin-top:2px">'+esc(c.telephone)+'</p>':'')
   +'<p class="muted2" style="font-size:11px;margin-top:2px">'+st.count+' chantier'+(st.count>1?'s':'')+'</p></div>'
   +'<div style="text-align:right;white-space:nowrap"><div style="font-weight:700;color:var(--cyan)">'+fmt(st.total)+'</div>'
@@ -954,6 +1032,10 @@ function viewClientDetail(id){
  +'<button class="btn btn-ghost" style="padding:9px" onclick="B.closeClient()">'+ico('back',18)+'</button>'
  +'<h1 class="trunc" id="clientTitle">'+esc(c.nom)+'</h1></div>'
  +'<div class="card pad mb3">'
+ +'<div class="field"><span class="label">Type de client</span><div class="grid2" id="cl_type">'
+ +'<button class="selbtn'+(c.typeClient!=='entreprise'?' active':'')+'" onclick="B.setClientType(\''+id+'\',\'particulier\')">Particulier</button>'
+ +'<button class="selbtn'+(c.typeClient==='entreprise'?' active':'')+'" onclick="B.setClientType(\''+id+'\',\'entreprise\')">Entreprise</button></div>'
+ +'<p class="muted2" style="font-size:11px;margin-top:6px">Détermine si la facturation électronique Peppol est légalement requise (B2B) à partir de 2026.</p></div>'
  +'<div class="field"><span class="label">Nom</span><input class="input" value="'+esc(c.nom)+'" oninput="B.setClientField(\''+id+'\',\'nom\',this.value)"/></div>'
  +'<div class="field"><span class="label">Téléphone</span><input class="input" type="tel" value="'+esc(c.telephone||'')+'" oninput="B.setClientField(\''+id+'\',\'telephone\',this.value)"/></div>'
  +'<div class="field"><span class="label">Email</span><input class="input" type="email" value="'+esc(c.email||'')+'" oninput="B.setClientField(\''+id+'\',\'email\',this.value)"/></div>'
@@ -975,7 +1057,7 @@ function viewClientDetail(id){
  +'<button class="btn btn-ghost" style="width:100%;margin-top:14px;color:var(--red)" onclick="B.deleteClient(\''+id+'\')">'+ico('trash',17)+'Supprimer ce client</button>';
 }
 function viewChantiers(){
- var list=state.chantiers.filter(function(c){return ui.filter==='tous'?true:c.statut===ui.filter;})
+ var list=state.chantiers.filter(function(c){return !c.deletedAt&&(ui.filter==='tous'?true:c.statut===ui.filter);})
    .slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
  var editing=ui.editingChantierId?state.chantiers.filter(function(c){return c.id===ui.editingChantierId;})[0]:null;
  var form=ui.chantierForm?(
@@ -988,9 +1070,13 @@ function viewChantiers(){
   +'<button class="btn btn-ghost" style="margin-top:6px;font-size:12px;padding:8px" onclick="B.addLigne()">'+ico('plus',15)+'Ajouter une ligne</button></div>'
   +'<div class="field"><span class="label">Montant facturé (0% TVA)'+(ui.chantierLignes.length?' — calculé depuis les lignes ci-dessus':'')+'</span><input class="input" id="c_montant" type="number" inputmode="decimal" value="'+(ui.chantierLignes.length?ligneSum(ui.chantierLignes):(editing?esc(editing.montant):''))+'" placeholder="0"'+(ui.chantierLignes.length?' readonly style="opacity:.65"':'')+'/></div>'
   +'<div class="field"><span class="label">Date</span><input class="input" id="c_date" type="date" value="'+(editing?editing.date:todayISO())+'"/></div>'
-  +'<div class="field"><span class="label">Statut</span><div class="grid2" id="c_stat">'
-  +'<button class="selbtn'+(ui.cStatut==='en_cours'?' active':'')+'" onclick="B.setCStatut(\'en_cours\')">'+ico('clock',16)+'En cours</button>'
-  +'<button class="selbtn'+(ui.cStatut==='paye'?' active':'')+'" onclick="B.setCStatut(\'paye\')">'+ico('check',16)+'Payé</button></div></div>'
+  +'<div class="field"><span class="label">Statut</span><div class="grid3" id="c_stat">'
+  +'<button class="selbtn'+(ui.cStatut==='en_cours'?' active':'')+'" onclick="B.setCStatut(\'en_cours\')" style="font-size:12px;padding:10px 4px">'+ico('clock',15)+'En cours</button>'
+  +'<button class="selbtn'+(ui.cStatut==='facture'?' active':'')+'" onclick="B.setCStatut(\'facture\')" style="font-size:12px;padding:10px 4px">'+ico('send',15)+'Facturé</button>'
+  +'<button class="selbtn'+(ui.cStatut==='paye'?' active':'')+'" onclick="B.setCStatut(\'paye\')" style="font-size:12px;padding:10px 4px">'+ico('check',15)+'Payé</button></div>'
+  +(editing&&editing.factureEnvoyeeLe?'<p class="muted2" style="font-size:11px;margin-top:6px">Facture envoyée le '+frDate(editing.factureEnvoyeeLe)+'</p>':'')+'</div>'
+  +'<div class="field"><span class="label">N° facture Peppol</span><input class="input" id="c_peppol" placeholder="Ex: 2026-000123" value="'+esc(editing?(editing.peppolNumero||''):'')+'"/>'
+  +'<p class="muted2" style="font-size:11px;margin-top:4px">Obligatoire pour passer un chantier facturé à une entreprise en "Facturé" ou "Payé" (facturation électronique Peppol, dès 2026). Laisse vide pour un particulier.</p></div>'
   +(editing?(
     '<div class="field"><span class="label">Photos du chantier</span>'
     +'<input type="file" id="cCapInput" accept="image/*" capture="environment" style="display:none" onchange="B.onChantierPhoto(this)"/>'
@@ -1001,23 +1087,28 @@ function viewChantiers(){
     +'<div id="c_photos" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px"></div>'
     +'<p class="muted2" style="font-size:10px;margin-top:6px">Chaque photo est enregistrée immédiatement sur cet appareil, indépendamment du bouton ci-dessous.</p></div>'
    ):'')
+  +(editing?'<button class="btn btn-ghost" style="width:100%;margin-bottom:10px" onclick="B.shareChantierPDF()">'+ico('send',18,'var(--cyan)')+'Facture PDF'+(editing.factureNumero?' (N° '+editing.factureNumero+')':'')+'</button>':'')
   +'<div class="row">'
   +'<button class="btn btn-primary" style="flex:1" onclick="B.addChantier()">'+(editing?'Enregistrer les modifications':'Enregistrer le chantier')+'</button>'
   +(editing?'<button class="btn btn-ghost" style="padding:13px 18px" onclick="B.cancelChantierForm()">Fermer</button>':'')
   +'</div></div>'):'';
  var rows=list.length?list.map(function(c){
-  var paid=c.statut==='paye', nph=(c.photos||[]).length, nl=(c.lignes||[]).length;
+  var nph=(c.photos||[]).length, nl=(c.lignes||[]).length, pro=clientIsEntreprise(c.clientId);
+  var joursFacture=c.statut==='facture'&&c.factureEnvoyeeLe?Math.floor((Date.now()-new Date(c.factureEnvoyeeLe+'T00:00').getTime())/86400000):0;
   return '<div class="card listitem pop mb2"><div class="between" style="align-items:flex-start">'
-   +'<div style="flex:1;min-width:0;margin-right:10px"><div class="row" style="align-items:center;gap:8px">'
+   +'<div style="flex:1;min-width:0;margin-right:10px"><div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">'
    +'<span style="font-weight:600" class="trunc">'+esc(c.client)+'</span>'
+   +(pro?'<span class="chip" style="background:rgba(6,182,212,.15);color:var(--cyan)">PRO</span>':'')
    +statutChip(c.statut)+'</div>'
    +(c.description?'<p class="muted trunc" style="font-size:12px;margin-top:2px">'+esc(c.description)+'</p>':'')
    +'<div class="row" style="align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap"><p class="muted2" style="font-size:11px">'+frDate(c.date)+'</p>'
    +(nl?'<span class="muted2" style="font-size:11px">· '+nl+' ligne'+(nl>1?'s':'')+'</span>':'')
-   +(nph?'<span class="muted2" style="font-size:11px;display:flex;align-items:center;gap:2px">· '+ico('image',12)+nph+'</span>':'')+'</div></div>'
+   +(nph?'<span class="muted2" style="font-size:11px;display:flex;align-items:center;gap:2px">· '+ico('image',12)+nph+'</span>':'')
+   +(pro&&!c.peppolNumero?'<span class="muted2" style="font-size:11px;color:var(--orange)">· N° Peppol manquant</span>':'')
+   +(joursFacture>=RELANCE_DAYS?'<span style="font-size:11px;color:var(--red);font-weight:600">· À relancer ('+joursFacture+' j)</span>':'')+'</div></div>'
    +'<div style="font-weight:700;color:var(--cyan);white-space:nowrap">'+fmt(c.montant)+'</div></div>'
    +'<div class="row" style="margin-top:12px">'
-   +'<button class="btn btn-ghost" style="flex:1;font-size:12px;padding:9px" onclick="B.toggleChantier(\''+c.id+'\')">'+ico(paid?'clock':'check',14)+(paid?'Repasser en cours':'Marquer payé')+'</button>'
+   +'<button class="btn btn-ghost" style="flex:1;font-size:12px;padding:9px" onclick="B.toggleChantier(\''+c.id+'\')">'+(c.statut==='en_cours'?ico('send',14)+'Marquer facturé':c.statut==='facture'?ico('check',14)+'Marquer payé':ico('clock',14)+'Repasser en cours')+'</button>'
    +'<button class="btn btn-ghost" style="padding:9px 12px" onclick="B.editChantier(\''+c.id+'\')">'+ico('edit',15)+'</button>'
    +'<button class="btn btn-ghost" style="padding:9px 14px;color:var(--red)" onclick="B.delChantier(\''+c.id+'\')">'+ico('trash',15)+'</button></div></div>';
  }).join(''):'<p class="muted2" style="text-align:center;font-size:14px;padding:32px 0">Aucun chantier ici.</p>';
@@ -1025,7 +1116,7 @@ function viewChantiers(){
   +'<button class="btn btn-primary" style="padding:9px 14px;font-size:13px" onclick="B.toggleForm(\'chantier\')">'+ico(ui.chantierForm?'x':'plus',18)+(ui.chantierForm?'Fermer':'Ajouter')+'</button></div>'
   +form
   +'<div class="seg mb3">'
-  +['tous|Tous','en_cours|En cours','paye|Payé'].map(function(t){var p=t.split('|');return '<button class="'+(ui.filter===p[0]?'active':'')+'" onclick="B.setFilter(\''+p[0]+'\')">'+p[1]+'</button>';}).join('')
+  +['tous|Tous','en_cours|En cours','facture|Facturé','paye|Payé'].map(function(t){var p=t.split('|');return '<button class="'+(ui.filter===p[0]?'active':'')+'" onclick="B.setFilter(\''+p[0]+'\')">'+p[1]+'</button>';}).join('')
   +'</div>'+rows;
 }
 
@@ -1068,7 +1159,7 @@ function viewDevis(){
 }
 
 function viewFrais(){
- var total=state.frais.reduce(function(s,f){return s+(Number(f.montant)||0);},0);
+ var total=state.frais.filter(function(f){return !f.deletedAt;}).reduce(function(s,f){return s+(Number(f.montant)||0);},0);
  var editing=ui.editingFraisId?state.frais.filter(function(f){return f.id===ui.editingFraisId;})[0]:null;
  var editingCh=editing&&editing.chantierId?chantierById(editing.chantierId):null;
  var form=ui.fraisForm?(
@@ -1093,7 +1184,7 @@ function viewFrais(){
   +'</div>'
   +'<button class="btn btn-primary" onclick="B.addFrais()">'+(editing?'Enregistrer les modifications':'Enregistrer le frais')+'</button></div>'):'';
  var groups=CATEGORIES.map(function(c){
-   var items=state.frais.filter(function(i){return i.categorie===c.key;}).slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
+   var items=state.frais.filter(function(i){return !i.deletedAt&&i.categorie===c.key;}).slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
    var tot=items.reduce(function(s,i){return s+(Number(i.montant)||0);},0);
    return{c:c,items:items,tot:tot};
  }).filter(function(g){return g.items.length;});
@@ -1124,6 +1215,48 @@ function viewFrais(){
 }
 
 /* ============ Render ============ */
+/* ============ Corbeille (suppression douce, purge auto après 30 jours) ============ */
+function daysLeft(deletedAt){ return Math.max(0,30-Math.floor((Date.now()-deletedAt)/86400000)); }
+function trashCount(){
+ return state.chantiers.filter(function(c){return c.deletedAt;}).length
+  +state.frais.filter(function(f){return f.deletedAt;}).length
+  +state.clients.filter(function(c){return c.deletedAt;}).length;
+}
+function trashRow(label,sub,deletedAt,restoreFn,purgeFn){
+ return '<div class="card pop mb2" style="padding:12px"><div class="between" style="align-items:flex-start">'
+ +'<div style="flex:1;min-width:0"><div class="trunc" style="font-weight:500;font-size:14px">'+esc(label)+'</div>'
+ +(sub?'<div class="muted2" style="font-size:11px;margin-top:2px" >'+esc(sub)+'</div>':'')
+ +'<div class="muted2" style="font-size:11px;margin-top:2px">Supprimé le '+frDate(new Date(deletedAt).toISOString().slice(0,10))+' · purge dans '+daysLeft(deletedAt)+' j</div></div></div>'
+ +'<div class="row" style="margin-top:10px">'
+ +'<button class="btn btn-ghost" style="flex:1;font-size:12px;padding:9px" onclick="'+restoreFn+'">'+ico('check',14)+'Restaurer</button>'
+ +'<button class="btn btn-ghost" style="color:var(--red);padding:9px 14px" onclick="'+purgeFn+'">'+ico('trash',15)+'</button></div></div>';
+}
+function viewTrash(){
+ var ch=state.chantiers.filter(function(c){return c.deletedAt;}).sort(function(a,b){return b.deletedAt-a.deletedAt;});
+ var fr=state.frais.filter(function(f){return f.deletedAt;}).sort(function(a,b){return b.deletedAt-a.deletedAt;});
+ var cl=state.clients.filter(function(c){return c.deletedAt;}).sort(function(a,b){return b.deletedAt-a.deletedAt;});
+ var total=ch.length+fr.length+cl.length;
+ var body='';
+ if(!total){
+  body='<p class="muted2" style="text-align:center;font-size:14px;padding:32px 0">La corbeille est vide.</p>';
+ } else {
+  if(ch.length){
+   body+='<div class="mb2" style="font-weight:600;font-size:14px">Chantiers</div>'
+    +ch.map(function(c){return trashRow(c.client,c.description||'',c.deletedAt,"B.restoreChantier('"+c.id+"')","B.purgeChantier('"+c.id+"')");}).join('');
+  }
+  if(fr.length){
+   body+='<div class="mb2" style="font-weight:600;font-size:14px;margin-top:8px">Frais</div>'
+    +fr.map(function(f){return trashRow(f.libelle,fmt(f.montant),f.deletedAt,"B.restoreFrais('"+f.id+"')","B.purgeFrais('"+f.id+"')");}).join('');
+  }
+  if(cl.length){
+   body+='<div class="mb2" style="font-weight:600;font-size:14px;margin-top:8px">Clients</div>'
+    +cl.map(function(c){return trashRow(c.nom,'',c.deletedAt,"B.restoreClient('"+c.id+"')","B.purgeClient('"+c.id+"')");}).join('');
+  }
+ }
+ return '<div class="row mb1" style="align-items:center;gap:10px"><button class="btn btn-ghost" style="padding:9px" onclick="B.setTab(\'settings\')">'+ico('back',18)+'</button><h1>Corbeille</h1></div>'
+ +'<p class="muted mb3" style="font-size:12px">Les éléments supprimés restent ici 30 jours avant purge définitive.</p>'
+ +body;
+}
 function viewSettings(){
  return '<div class="row mb1" style="align-items:center;gap:10px"><button class="btn btn-ghost" style="padding:9px" onclick="B.setTab(\'dashboard\')">'+ico('back',18)+'</button><h1>Réglages</h1></div><p class="muted mb3" style="font-size:12px">Société, fiscalité et sauvegarde.</p>'
  +'<div class="card pad mb3">'
@@ -1153,6 +1286,16 @@ function viewSettings(){
  +'<div class="row">'
  +'<button class="btn btn-ghost" style="flex:1" onclick="B.exportCSV()">'+ico('download',18,'var(--cyan)')+'CSV</button>'
  +'<button class="btn btn-ghost" style="flex:1" onclick="B.recapPDF()">'+ico('send',18,'var(--cyan)')+'Récap PDF</button></div></div>'
+ +'<div class="card pad mb3" style="cursor:pointer" onclick="B.setTab(\'trash\')"><div class="between" style="align-items:center">'
+ +'<div class="row" style="align-items:center;gap:10px"><div class="icobox" style="width:34px;height:34px;background:rgba(148,163,184,.15);color:var(--muted)">'+ico('trash',17)+'</div>'
+ +'<div><div style="font-weight:600;font-size:14px">Corbeille</div><div class="muted2" style="font-size:11px">'+(trashCount()?trashCount()+' élément'+(trashCount()>1?'s':'')+' · purge auto après 30 jours':'Vide')+'</div></div></div>'
+ +ico('arrow',18,'var(--muted2)')+'</div></div>'
+ +'<div class="card pad mb3" style="border-color:rgba(167,139,250,.4)">'
+ +'<div style="font-weight:600;margin-bottom:4px;color:#a78bfa">Mode démonstration</div>'
+ +'<p class="muted2" style="font-size:12px;margin-bottom:10px">Ajoute des clients/chantiers/frais fictifs pour visualiser toutes les fonctionnalités (statuts, Peppol, corbeille, photos, marge client...) sans toucher à tes vraies données.</p>'
+ +'<div class="row">'
+ +'<button class="btn btn-ghost" style="flex:1" onclick="B.loadDemoData()">Charger la démo</button>'
+ +'<button class="btn btn-ghost" style="flex:1;color:var(--red)" onclick="B.clearDemoData()">Retirer la démo</button></div></div>'
  +'<div class="card pad mb3" style="border-color:rgba(16,185,129,.4)">'
  +'<div style="font-weight:600;margin-bottom:4px">'+ico('download',15,'var(--green)')+' Sauvegarde locale complète</div>'
  +'<p class="muted2" style="font-size:12px;margin-bottom:12px">Un seul fichier contenant TOUT : chantiers, frais, devis, réglages et photos de tickets. Indépendant de Google Drive — à garder précieusement (Fichiers, iCloud, clé USB…). C\'est ta protection principale contre la perte de données.</p>'
@@ -1172,7 +1315,7 @@ function viewSettings(){
    +'<p class="muted2" style="font-size:10px;margin-top:6px">Par défaut, l\'app utilise l\'ID intégré. N\'en renseigne un autre que pour connecter un projet Google différent.</p></div>'):'')
  +'</div>';
 }
-var VIEWS={dashboard:viewDashboard,chantiers:viewChantiers,devis:viewDevis,frais:viewFrais,clients:viewClients,settings:viewSettings};
+var VIEWS={dashboard:viewDashboard,chantiers:viewChantiers,devis:viewDevis,frais:viewFrais,clients:viewClients,settings:viewSettings,trash:viewTrash};
 var NAVITEMS=[['dashboard','Dashboard','home'],['chantiers','Chantiers','hardhat'],['devis','Devis','calc'],['frais','Frais','receipt'],['clients','Clients','users']];
 function renderNav(){
  $('nav').innerHTML=NAVITEMS.map(function(n){var on=ui.tab===n[0];
@@ -1258,7 +1401,12 @@ var B={
  },
  toggleForm:function(w){ if(w==='chantier'){ ui.chantierForm=!ui.chantierForm; ui.editingChantierId=null; ui.chantierLignes=[]; if(ui.chantierForm)ui.cStatut='en_cours'; } else {ui.fraisForm=!ui.fraisForm; ui.editingFraisId=null; pendingBlob=null;} render(); },
  setFilter:function(f){ ui.filter=f; render(); },
- setCStatut:function(s){ ui.cStatut=s; var b=$('c_stat').children; b[0].className='selbtn'+(s==='en_cours'?' active':''); b[1].className='selbtn'+(s==='paye'?' active':''); },
+ setCStatut:function(s){
+   ui.cStatut=s; var b=$('c_stat').children;
+   b[0].className='selbtn'+(s==='en_cours'?' active':'');
+   b[1].className='selbtn'+(s==='facture'?' active':'');
+   b[2].className='selbtn'+(s==='paye'?' active':'');
+ },
  setFCat:function(k){ ui.fCat=k; },
  editChantier:function(id){
    var c=state.chantiers.filter(function(x){return x.id===id;})[0]; if(!c)return;
@@ -1292,13 +1440,23 @@ var B={
    if(!client||!montant){alert('Nom du client et montant requis.');return;}
    var desc=$('c_desc').value.trim(), date=($('c_date')&&$('c_date').value)||todayISO();
    var lignes=ui.chantierLignes.length?ui.chantierLignes.map(function(l){return {id:l.id,libelle:l.libelle,montant:Number(l.montant)||0};}):[];
+   var peppol=($('c_peppol')||{}).value?$('c_peppol').value.trim():'';
+   var peekClient=findClientByName(client);   // lecture seule : on ne crée rien tant que la validation n'est pas passée
+   var needsPeppol=(ui.cStatut==='facture'||ui.cStatut==='paye')&&peekClient&&peekClient.typeClient==='entreprise'&&!peppol;
+   if(needsPeppol){
+    alert('Ce client est une entreprise : renseigne le n° de facture Peppol avant de passer ce chantier en "Facturé" ou "Payé".');
+    return;
+   }
    var clientId=B.resolveClientId('c',client);
+   var existing=ui.editingChantierId?chantierById(ui.editingChantierId):null;
+   // la date d'envoi se fixe la première fois qu'on entre en statut "Facturé"/"Payé", et ne bouge plus ensuite
+   var factureEnvoyeeLe=(existing&&existing.factureEnvoyeeLe)||((ui.cStatut==='facture'||ui.cStatut==='paye')?todayISO():null);
    if(ui.editingChantierId){
      var eid=ui.editingChantierId;
-     state.chantiers=state.chantiers.map(function(c){return c.id===eid?Object.assign({},c,{client:client,clientId:clientId,description:desc,montant:montant,lignes:lignes,statut:ui.cStatut,date:date}):c;});
+     state.chantiers=state.chantiers.map(function(c){return c.id===eid?Object.assign({},c,{client:client,clientId:clientId,description:desc,montant:montant,lignes:lignes,statut:ui.cStatut,date:date,peppolNumero:peppol||null,factureEnvoyeeLe:factureEnvoyeeLe}):c;});
      ui.editingChantierId=null;
    } else {
-     state.chantiers.unshift({id:uid(),client:client,clientId:clientId,description:desc,montant:montant,lignes:lignes,statut:ui.cStatut,date:date});
+     state.chantiers.unshift({id:uid(),client:client,clientId:clientId,description:desc,montant:montant,lignes:lignes,statut:ui.cStatut,date:date,peppolNumero:peppol||null,factureEnvoyeeLe:factureEnvoyeeLe});
    }
    ui.chantierLignes=[];
    persist(); ui.chantierForm=false; render();
@@ -1355,20 +1513,40 @@ var B={
    }
    persist();
  },
+ setClientType:function(id,type){
+   var c=state.clients.filter(function(x){return x.id===id;})[0]; if(!c)return;
+   c.typeClient=type; persist();
+   var box=$('cl_type');
+   if(box&&box.children.length===2){
+    box.children[0].className='selbtn'+(type!=='entreprise'?' active':'');
+    box.children[1].className='selbtn'+(type==='entreprise'?' active':'');
+   }
+ },
  deleteClient:function(id){
-   if(!confirm('Supprimer cette fiche client ? Les chantiers existants seront conservés (avec le nom actuel) mais ne seront plus rattachés.'))return;
-   state.chantiers.forEach(function(ch){ if(ch.clientId===id)ch.clientId=null; });
-   state.clients=state.clients.filter(function(c){return c.id!==id;});
+   var c=state.clients.filter(function(x){return x.id===id;})[0]; if(!c)return;
+   c.deletedAt=Date.now();
    ui.selectedClientId=null; persist(); render();
+   toast('Client déplacé dans la corbeille (récupérable 30 jours).');
  },
  gotoChantier:function(id){ ui.tab='chantiers'; ui.selectedClientId=null; render(); B.editChantier(id); },
- toggleChantier:function(id){ state.chantiers=state.chantiers.map(function(c){return c.id===id?Object.assign({},c,{statut:c.statut==='paye'?'en_cours':'paye'}):c;}); persist(); render(); },
- delChantier:function(id){
-   var c=chantierById(id);
-   if(c&&c.photos&&c.photos.length){ c.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; }); }
-   state.chantiers=state.chantiers.filter(function(c){return c.id!==id;});
-   state.frais.forEach(function(f){ if(f.chantierId===id)f.chantierId=null; });
+ toggleChantier:function(id){
+   var c=chantierById(id); if(!c)return;
+   var next=c.statut==='en_cours'?'facture':c.statut==='facture'?'paye':'en_cours';
+   if((next==='facture'||next==='paye')&&clientIsEntreprise(c.clientId)&&!c.peppolNumero){
+    toast('N° de facture Peppol requis pour ce client entreprise — complète-le avant de passer à l\'étape suivante.');
+    B.editChantier(id);
+    return;
+   }
+   var factureEnvoyeeLe=c.factureEnvoyeeLe;
+   if(next==='facture'&&!factureEnvoyeeLe)factureEnvoyeeLe=todayISO();
+   state.chantiers=state.chantiers.map(function(x){return x.id===id?Object.assign({},x,{statut:next,factureEnvoyeeLe:factureEnvoyeeLe}):x;});
    persist(); render();
+ },
+ delChantier:function(id){
+   var c=chantierById(id); if(!c)return;
+   c.deletedAt=Date.now();
+   persist(); render();
+   toast('Chantier déplacé dans la corbeille (récupérable 30 jours).');
  },
  onChantierPhoto:function(input){
    var files=input.files?Array.prototype.slice.call(input.files):[]; input.value='';
@@ -1440,11 +1618,51 @@ var B={
    }
  },
  delFrais:function(id){
-   var f=state.frais.filter(function(i){return i.id===id;})[0];
-   state.frais=state.frais.filter(function(i){return i.id!==id;}); persist();
-   if(receiptIds[id]){idbDel(id);delete receiptIds[id];delete receiptDrive[id];}
-   if(f&&f.photos&&f.photos.length){ f.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; }); }
-   render();
+   var f=state.frais.filter(function(i){return i.id===id;})[0]; if(!f)return;
+   f.deletedAt=Date.now();
+   persist(); render();
+   toast('Frais déplacé dans la corbeille (récupérable 30 jours).');
+ },
+ /* --- corbeille --- */
+ restoreChantier:function(id){
+   var c=chantierById(id); if(!c)return;
+   delete c.deletedAt; persist(); render();
+   toast('Chantier restauré.');
+ },
+ purgeChantier:function(id){
+   B.askConfirm('Supprimer définitivement ce chantier ? Cette action est irréversible.',function(){
+    var c=chantierById(id); if(!c)return;
+    if(c.photos&&c.photos.length){ c.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; }); }
+    state.chantiers=state.chantiers.filter(function(x){return x.id!==id;});
+    state.frais.forEach(function(f){ if(f.chantierId===id)f.chantierId=null; });
+    persist(); render();
+   });
+ },
+ restoreFrais:function(id){
+   var f=state.frais.filter(function(x){return x.id===id;})[0]; if(!f)return;
+   delete f.deletedAt; persist(); render();
+   toast('Frais restauré.');
+ },
+ purgeFrais:function(id){
+   B.askConfirm('Supprimer définitivement ce frais ? Cette action est irréversible.',function(){
+    var f=state.frais.filter(function(x){return x.id===id;})[0]; if(!f)return;
+    if(receiptIds[id]){idbDel(id);delete receiptIds[id];delete receiptDrive[id];}
+    if(f.photos&&f.photos.length){ f.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; }); }
+    state.frais=state.frais.filter(function(x){return x.id!==id;});
+    persist(); render();
+   });
+ },
+ restoreClient:function(id){
+   var c=state.clients.filter(function(x){return x.id===id;})[0]; if(!c)return;
+   delete c.deletedAt; persist(); render();
+   toast('Client restauré.');
+ },
+ purgeClient:function(id){
+   B.askConfirm('Supprimer définitivement cette fiche client ? Les chantiers existants seront conservés (avec le nom actuel) mais ne seront plus rattachés. Cette action est irréversible.',function(){
+    state.chantiers.forEach(function(ch){ if(ch.clientId===id)ch.clientId=null; });
+    state.clients=state.clients.filter(function(x){return x.id!==id;});
+    persist(); render();
+   });
  },
  /* --- justificatifs --- */
  onPhoto:function(input){
@@ -1581,7 +1799,22 @@ var B={
    return '<button class="btn btn-ghost" style="flex:1" onclick="B.driveUpload(\''+id+'\')">'+ico('cloud',18,'var(--cyan)')+'Envoyer vers Drive</button>';
  },
  refreshModalDrive:function(id){ var el=$('modalDrive'); if(el)el.innerHTML=B.driveBtnHTML(id); },
- closeModal:function(){ currentReceipt=null; currentCPhoto=null; var m=$('modal'); m.className=''; m.innerHTML=''; },
+ closeModal:function(){ currentReceipt=null; currentCPhoto=null; pendingConfirm=null; var m=$('modal'); m.className=''; m.innerHTML=''; },
+ /* Confirmation intégrée à l'app pour les actions irréversibles — window.confirm() s'est révélé
+    peu fiable dans le contexte PWA iOS (écran d'accueil), donc on ne l'utilise plus nulle part. */
+ askConfirm:function(message,onYes){
+   pendingConfirm=onYes;
+   var m=$('modal'); m.className='modal';
+   m.innerHTML='<div class="imgwrap" style="align-items:center;justify-content:center;padding:28px 24px">'
+    +'<p style="text-align:center;font-size:15px;line-height:1.5">'+esc(message)+'</p></div>'
+    +'<div class="modalbar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Annuler</button>'
+    +'<button class="btn btn-ghost" style="flex:1;color:var(--red);font-weight:700" onclick="B.confirmYes()">Confirmer</button></div>';
+ },
+ confirmYes:function(){
+   var cb=pendingConfirm; pendingConfirm=null;
+   var m=$('modal'); m.className=''; m.innerHTML='';
+   if(cb)cb();
+ },
  driveUpload:function(id){
    var cid=effectiveClientId();
    if(!cid){ alert('Aucun ID client OAuth configuré.'); return; }
@@ -1715,6 +1948,60 @@ var B={
    var name='devis'+(client?'-'+client.replace(/[^A-Za-z0-9]+/g,'_'):'')+'.pdf';
    sharePDF(makePDF(L),name,'Devis'+(client?' - '+client:''),B.devisBody());
  },
+ shareChantierPDF:function(){
+   var c=chantierById(ui.editingChantierId); if(!c)return;
+   if(!c.factureNumero){
+    c.factureNumero=state.settings.nextInvoiceNumber||1;
+    state.settings.nextInvoiceNumber=c.factureNumero+1;
+    persist();
+   }
+   var cli=c.clientId?state.clients.filter(function(x){return x.id===c.clientId;})[0]:null;
+   var pro=cli&&cli.typeClient==='entreprise';
+   // Passe automatiquement le chantier en "Facturé" (avec date d'envoi) à la génération du PDF,
+   // sauf s'il attend encore un n° Peppol obligatoire (entreprise) — dans ce cas on génère quand
+   // même le PDF (utile en interne) mais on ne fait pas semblant que la facture est "envoyée".
+   if(c.statut==='en_cours'){
+    if(pro&&!c.peppolNumero){
+     toast('PDF généré, mais chantier resté "En cours" : n° Peppol requis pour marquer une facture entreprise comme envoyée.');
+    } else {
+     c.statut='facture';
+     if(!c.factureEnvoyeeLe)c.factureEnvoyeeLe=todayISO();
+     ui.cStatut='facture';
+    }
+    persist();
+   }
+   var comp=(state.settings.companyName||'').trim();
+   var lignes=(c.lignes||[]).filter(function(l){return l.libelle||l.montant;});
+   var total=lignes.length?ligneSum(lignes):(Number(c.montant)||0);
+   var paid=c.statut==='paye';
+   var L=[];
+   if(comp)L.push({t:comp,size:19,bold:true});
+   L.push({t:'FACTURE N° '+c.factureNumero,size:13,bold:true,color:PDFC.cyan,gap:comp?10:0});
+   L.push({type:'rule',gap:8});
+   L.push({t:'Client : '+c.client,size:11,gap:8});
+   if(cli&&cli.adresse)L.push({t:cli.adresse,size:10,color:PDFC.muted,gap:3});
+   if(cli&&cli.email)L.push({t:cli.email,size:10,color:PDFC.muted,gap:2});
+   L.push({t:'Date : '+frDate(c.date),size:11,gap:6});
+   if(c.description)L.push({t:c.description,size:10,color:PDFC.muted,gap:4});
+   if(lignes.length){
+    lignes.forEach(function(l,i){
+     L.push({type:'itemrow',left:(l.libelle||'Prestation'),right:euroPDF(l.montant),size:11,shaded:i%2===1,gap:i===0?14:0,valueX:420});
+    });
+   } else {
+    L.push({type:'itemrow',left:c.description||'Prestation',right:euroPDF(total),size:11,gap:14,valueX:420});
+   }
+   L.push({type:'rule',gap:14});
+   L.push({type:'totalbox',left:'TOTAL FACTURÉ',right:euroPDF(total),size:15,gap:6,valueX:380});
+   L.push({t:paid?'Facture acquittée.':'Paiement en attente.',size:10,bold:true,color:paid?PDFC.green:PDFC.muted,gap:16});
+   if(c.peppolNumero)L.push({t:'Réf. facture Peppol : '+c.peppolNumero,size:9,color:PDFC.muted,gap:6});
+   L.push({t:'TVA non applicable, art. 56bis (franchise de TVA).',size:9,color:PDFC.muted,gap:c.peppolNumero?4:8});
+   if(comp)L.push({t:comp,size:10,color:PDFC.muted,gap:20});
+   var name='facture-'+c.factureNumero+(c.client?'-'+c.client.replace(/[^A-Za-z0-9]+/g,'_'):'')+'.pdf';
+   var bodyTxt=(comp?comp+'\n':'')+'Facture n° '+c.factureNumero+' - '+c.client+'\n\nDate : '+frDate(c.date)+'\n\nTOTAL : '+fmt2(total)+'\n'+(paid?'Facture acquittee.':'Paiement en attente.')+'\n(TVA non applicable, art. 56bis - franchise de TVA)';
+   sharePDF(makePDF(L),name,'Facture n°'+c.factureNumero+' - '+c.client,bodyTxt);
+   if(pro&&c.peppolNumero)toast('Client entreprise : ce PDF est un document interne, il ne remplace pas l\'envoi via Peppol.');
+   render();
+ },
  convertDevis:function(){
    var v=B.devisVals(), mo=v.heures*v.tarif, total=Math.round((v.matTotal+mo+v.depl)*100)/100;
    var client=(($('d_client')||{}).value||'').trim()||'Nouveau client';
@@ -1727,6 +2014,80 @@ var B={
    if(v.depl>0)lignes.push({id:uid(),libelle:'Déplacement',montant:Math.round(v.depl*100)/100});
    state.chantiers.unshift({id:uid(),client:client,clientId:clientId,description:'Converti depuis un devis',montant:total,lignes:lignes,statut:'en_cours',date:todayISO()});
    persist(); ui.tab='chantiers'; render();
+ },
+ /* --- données de démonstration --- */
+ loadDemoData:function(){
+   function daysAgo(n){ var d=new Date(Date.now()-n*86400000); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+   var cJanssens={id:uid(),nom:'Janssens',telephone:'0478 12 34 56',email:'',adresse:'Rue de la Station 12, 9500 Geraardsbergen',notes:'',typeClient:'particulier',createdAt:Date.now(),_demo:true};
+   var cDupuis={id:uid(),nom:'Dupuis',telephone:'0495 22 33 44',email:'',adresse:'',notes:'',typeClient:'particulier',createdAt:Date.now(),_demo:true};
+   var cAcme={id:uid(),nom:'ACME Construction SRL',telephone:'02 555 12 12',email:'compta@acme-construction.be',adresse:'Avenue Louise 200, 1050 Bruxelles',notes:'Contact : M. Peeters, chef de chantier',typeClient:'entreprise',createdAt:Date.now(),_demo:true};
+   var cBuildco={id:uid(),nom:'BuildCo SA',telephone:'',email:'',adresse:'',notes:'',typeClient:'entreprise',createdAt:Date.now(),_demo:true};
+   state.clients.push(cJanssens,cDupuis,cAcme,cBuildco);
+
+   var ch1={id:uid(),client:cJanssens.nom,clientId:cJanssens.id,description:'Installation mono-split chambre',montant:950,lignes:[],statut:'en_cours',date:daysAgo(2),photos:[],_demo:true};
+
+   var lignesDupuis1=[{id:uid(),libelle:'Mono-split salon',montant:900},{id:uid(),libelle:'Pompe de relevage condensats',montant:150}];
+   var ch2={id:uid(),client:cDupuis.nom,clientId:cDupuis.id,description:'Climatisation salon + relevage',montant:ligneSum(lignesDupuis1),lignes:lignesDupuis1,statut:'facture',date:daysAgo(25),factureEnvoyeeLe:daysAgo(22),peppolNumero:null,_demo:true};
+
+   var lignesDupuis2=[{id:uid(),libelle:'Entretien annuel',montant:120}];
+   var fnum1=state.settings.nextInvoiceNumber||1;
+   var ch3={id:uid(),client:cDupuis.nom,clientId:cDupuis.id,description:'Entretien climatisation',montant:ligneSum(lignesDupuis2),lignes:lignesDupuis2,statut:'paye',date:daysAgo(95),factureEnvoyeeLe:daysAgo(93),factureNumero:fnum1,_demo:true};
+   state.settings.nextInvoiceNumber=fnum1+1;
+
+   var lignesAcme=[{id:uid(),libelle:'Unité extérieure Daikin 12kW',montant:1450},{id:uid(),libelle:'Unités intérieures x2',montant:900},{id:uid(),libelle:'Main-d\'œuvre installation',montant:600}];
+   var fnum2=state.settings.nextInvoiceNumber||1;
+   var ch4={id:uid(),client:cAcme.nom,clientId:cAcme.id,description:'Climatisation bureaux - 2e étage',montant:ligneSum(lignesAcme),lignes:lignesAcme,statut:'facture',date:daysAgo(6),factureEnvoyeeLe:daysAgo(3),peppolNumero:'2026-000045',factureNumero:fnum2,_demo:true};
+   state.settings.nextInvoiceNumber=fnum2+1;
+
+   var ch5={id:uid(),client:cBuildco.nom,clientId:cBuildco.id,description:'Étude climatisation nouveau bâtiment',montant:2400,lignes:[],statut:'en_cours',date:daysAgo(1),_demo:true};
+
+   var chTrash={id:uid(),client:'Client test annulé',clientId:null,description:'Devis annulé par le client',montant:300,lignes:[],statut:'en_cours',date:daysAgo(10),deletedAt:Date.now()-5*86400000,_demo:true};
+
+   state.chantiers.unshift(ch5,ch4,ch3,ch2,ch1,chTrash);
+
+   var f1={id:uid(),libelle:'Essence camionnette',montant:65,date:daysAgo(3),categorie:'Déplacements',chantierId:null,_demo:true};
+   var f2={id:uid(),libelle:'Pompe de relevage (achat)',montant:45,date:daysAgo(25),categorie:'Matériel revendu',chantierId:ch2.id,_demo:true};
+   var f3={id:uid(),libelle:'Restaurant midi client',montant:28,date:daysAgo(6),categorie:'Restaurant',chantierId:ch4.id,_demo:true};
+   var f4={id:uid(),libelle:'Abonnement logiciel devis',montant:15,date:daysAgo(20),categorie:'Formations & Logiciels',chantierId:null,_demo:true};
+   var fTrash={id:uid(),libelle:'Frais en double (erreur)',montant:12,date:daysAgo(8),categorie:'Fonctionnement',chantierId:null,deletedAt:Date.now()-3*86400000,_demo:true};
+   state.frais.unshift(f4,f3,f2,f1,fTrash);
+
+   persist();
+   ui.tab='dashboard'; ui.selectedClientId=null; ui.editingChantierId=null; ui.editingFraisId=null;
+   render();
+   toast('Données de démo chargées. Un bouton "Retirer" est apparu dans Réglages.');
+
+   // Photos d'illustration (asynchrone, canvas -> IndexedDB) : 2 sur le chantier Janssens, 1 ticket sur le frais lié à Dupuis
+   demoImageBlob('Avant','#0891b2',function(blob){
+    if(!blob)return;
+    var pid=uid();
+    idbPutC({id:pid,chantierId:ch1.id,blob:blob,drive:null},function(ok){ if(ok){ ch1.photos=(ch1.photos||[]).concat([pid]); persist(); if(ui.tab==='chantiers')render(); } });
+   });
+   demoImageBlob('Après','#059669',function(blob){
+    if(!blob)return;
+    var pid=uid();
+    idbPutC({id:pid,chantierId:ch1.id,blob:blob,drive:null},function(ok){ if(ok){ ch1.photos=(ch1.photos||[]).concat([pid]); persist(); if(ui.tab==='chantiers')render(); } });
+   });
+   demoImageBlob('Ticket','#f59e0b',function(blob){
+    if(!blob)return;
+    idbPut({id:f2.id,blob:blob,drive:null},function(ok){ if(ok){ receiptIds[f2.id]=true; if(ui.tab==='frais')render(); } });
+   });
+ },
+ clearDemoData:function(){
+   B.askConfirm('Retirer toutes les données de démonstration ? Suppression immédiate et définitive (pas de passage par la corbeille).',function(){
+    state.chantiers.filter(function(c){return c._demo&&c.photos&&c.photos.length;}).forEach(function(c){
+     c.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; });
+    });
+    state.frais.filter(function(f){return f._demo;}).forEach(function(f){
+     if(receiptIds[f.id]){idbDel(f.id);delete receiptIds[f.id];delete receiptDrive[f.id];}
+     if(f.photos&&f.photos.length)f.photos.forEach(function(pid){ idbDelC(pid); delete cphotoUrls[pid]; });
+    });
+    state.chantiers=state.chantiers.filter(function(c){return !c._demo;});
+    state.frais=state.frais.filter(function(f){return !f._demo;});
+    state.clients=state.clients.filter(function(c){return !c._demo;});
+    persist(); render();
+    toast('Données de démo retirées.');
+   });
  },
  /* --- export --- */
  exportCSV:function(){
@@ -1745,11 +2106,11 @@ var B={
    L.push('Reste en poche'+sep+Math.round(f.reste));
    L.push('');
    L.push('CHANTIERS');
-   L.push(['Date','Client','Description','Montant','Statut'].join(sep));
-   state.chantiers.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(c){
-     L.push([c.date,q(c.client),q(c.description),round2(c.montant),c.statut==='paye'?'Paye':'En cours'].join(sep));
+   L.push(['Date','Client','Type client','Description','Montant','Statut','Facture envoyee le','N Facture','N Peppol'].join(sep));
+   state.chantiers.filter(function(c){return !c.deletedAt;}).slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(c){
+     L.push([c.date,q(c.client),clientIsEntreprise(c.clientId)?'Entreprise':'Particulier',q(c.description),round2(c.montant),c.statut==='paye'?'Paye':c.statut==='facture'?'Facture':'En cours',c.factureEnvoyeeLe||'',c.factureNumero||'',q(c.peppolNumero||'')].join(sep));
    });
-   var chantiersAvecLignes=state.chantiers.filter(function(c){return c.lignes&&c.lignes.length;});
+   var chantiersAvecLignes=state.chantiers.filter(function(c){return !c.deletedAt&&c.lignes&&c.lignes.length;});
    if(chantiersAvecLignes.length){
     L.push('');
     L.push('LIGNES DE FACTURATION DETAILLEES');
@@ -1763,7 +2124,7 @@ var B={
    L.push('');
    L.push('FRAIS');
    L.push(['Date','Libelle','Categorie','Montant','% Deduc','Deductible','Chantier lie'].join(sep));
-   state.frais.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(i){
+   state.frais.filter(function(i){return !i.deletedAt;}).slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(i){
      var pd=deducOf(i.categorie);
      var ch=i.chantierId?chantierById(i.chantierId):null;
      L.push([i.date,q(i.libelle),q(i.categorie),round2(i.montant),pd,round2((Number(i.montant)||0)*pd/100),q(ch?ch.client:'')].join(sep));
@@ -1780,8 +2141,8 @@ var B={
  },
  recapPDF:function(){
    var f=finance(); var comp=(state.settings.companyName||'').trim();
-   var chYr=state.chantiers.filter(function(c){return(c.date||'').slice(0,4)===f.year;});
-   var frYr=state.frais.filter(function(fr){return(fr.date||'').slice(0,4)===f.year;});
+   var chYr=state.chantiers.filter(function(c){return !c.deletedAt&&(c.date||'').slice(0,4)===f.year;});
+   var frYr=state.frais.filter(function(fr){return !fr.deletedAt&&(fr.date||'').slice(0,4)===f.year;});
    var L=[];
    if(comp)L.push({t:comp,size:19,bold:true});
    L.push({t:'RÉCAPITULATIF — ANNÉE '+f.year,size:13,bold:true,color:PDFC.cyan,gap:comp?10:0});
@@ -1799,7 +2160,8 @@ var B={
    L.push({type:'totalbox',left:'RESTE EN POCHE',right:euroPDF(f.reste),size:15,gap:6,valueX:340});
    L.push({t:'Plafond franchise TVA : '+euroPDF(f.ca)+' / '+euroPDF(TVA_LIMIT),size:11,color:PDFC.muted,gap:20});
    L.push({t:'Chantiers payés ('+f.year+') : '+chYr.filter(function(c){return c.statut==='paye';}).length,size:11,color:PDFC.muted,gap:6});
-   L.push({t:'Chantiers en cours ('+f.year+') : '+chYr.filter(function(c){return c.statut!=='paye';}).length,size:11,color:PDFC.muted});
+   L.push({t:'Chantiers facturés, en attente ('+f.year+') : '+chYr.filter(function(c){return c.statut==='facture';}).length,size:11,color:PDFC.muted});
+   L.push({t:'Chantiers en cours ('+f.year+') : '+chYr.filter(function(c){return c.statut==='en_cours';}).length,size:11,color:PDFC.muted});
    L.push({t:'Frais enregistrés ('+f.year+') : '+frYr.length,size:11,color:PDFC.muted});
    sharePDF(makePDF(L),'recap-'+todayISO()+'.pdf','Recapitulatif'+(comp?' - '+comp:''),'Recapitulatif comptable'+(comp?' - '+comp:''));
  }
