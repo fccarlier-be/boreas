@@ -1111,7 +1111,11 @@ function chantierRowsHTML(){
  return list.map(function(c){
   var nph=(c.photos||[]).length, nl=(c.lignes||[]).length, pro=clientIsEntreprise(c.clientId);
   var joursFacture=c.statut==='facture'&&c.factureEnvoyeeLe?Math.floor((Date.now()-new Date(c.factureEnvoyeeLe+'T00:00').getTime())/86400000):0;
-  return '<div class="card listitem pop mb2"><div class="between" style="align-items:flex-start">'
+  var joursEnCours=c.statut==='en_cours'&&c.date?Math.floor((Date.now()-new Date(c.date+'T00:00').getTime())/86400000):0;
+  var alerteRelance=joursFacture>=RELANCE_DAYS, alerteOubli=joursEnCours>=STALE_DAYS;
+  var cardStyle=alerteRelance?' style="border-color:rgba(239,68,68,.6);background:rgba(239,68,68,.05)"'
+   :alerteOubli?' style="border-color:rgba(245,158,11,.6);background:rgba(245,158,11,.05)"':'';
+  return '<div class="card listitem pop mb2"'+cardStyle+'><div class="between" style="align-items:flex-start">'
    +'<div style="flex:1;min-width:0;margin-right:10px"><div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">'
    +'<span style="font-weight:600" class="trunc">'+esc(c.client)+'</span>'
    +(pro?'<span class="chip" style="background:rgba(6,182,212,.15);color:var(--cyan)">PRO</span>':'')
@@ -1121,7 +1125,8 @@ function chantierRowsHTML(){
    +(nl?'<span class="muted2" style="font-size:11px">· '+nl+' ligne'+(nl>1?'s':'')+'</span>':'')
    +(nph?'<span class="muted2" style="font-size:11px;display:flex;align-items:center;gap:2px">· '+ico('image',12)+nph+'</span>':'')
    +(pro&&!c.peppolNumero?'<span class="muted2" style="font-size:11px;color:var(--orange)">· N° Peppol manquant</span>':'')
-   +(joursFacture>=RELANCE_DAYS?'<span style="font-size:11px;color:var(--red);font-weight:600">· À relancer ('+joursFacture+' j)</span>':'')+'</div></div>'
+   +(alerteRelance?'<span style="font-size:11px;color:var(--red);font-weight:600">· À relancer ('+joursFacture+' j)</span>':'')
+   +(alerteOubli?'<span style="font-size:11px;color:var(--orange);font-weight:600">· Oublié ('+joursEnCours+' j)</span>':'')+'</div></div>'
    +'<div style="font-weight:700;color:var(--cyan);white-space:nowrap">'+fmt(c.montant)+'</div></div>'
    +'<div class="row" style="margin-top:12px">'
    +'<button class="btn btn-ghost" style="flex:1;font-size:12px;padding:9px" onclick="B.toggleChantier(\''+c.id+'\')">'+(c.statut==='en_cours'?ico('send',14)+'Marquer facturé':c.statut==='facture'?ico('check',14)+'Marquer payé':ico('clock',14)+'Repasser en cours')+'</button>'
@@ -1624,10 +1629,15 @@ var B={
     B.editChantier(id);
     return;
    }
-   var factureEnvoyeeLe=c.factureEnvoyeeLe;
-   if(next==='facture'&&!factureEnvoyeeLe)factureEnvoyeeLe=todayISO();
-   state.chantiers=state.chantiers.map(function(x){return x.id===id?Object.assign({},x,{statut:next,factureEnvoyeeLe:factureEnvoyeeLe}):x;});
-   persist(); render();
+   var msg=next==='facture'?'Marquer ce chantier comme facturé ? La date d\'envoi sera enregistrée.'
+    :next==='paye'?'Marquer ce chantier comme payé ?'
+    :'Repasser ce chantier en cours ? Ça annule son statut facturé/payé.';
+   B.askConfirm(msg,function(){
+    var factureEnvoyeeLe=c.factureEnvoyeeLe;
+    if(next==='facture'&&!factureEnvoyeeLe)factureEnvoyeeLe=todayISO();
+    state.chantiers=state.chantiers.map(function(x){return x.id===id?Object.assign({},x,{statut:next,factureEnvoyeeLe:factureEnvoyeeLe}):x;});
+    persist(); render();
+   });
  },
  delChantier:function(id){
    var c=chantierById(id); if(!c)return;
@@ -2141,7 +2151,10 @@ var B={
  },
  setDevisStatut:function(id,statut){
    var h=state.devisHistory.filter(function(x){return x.id===id;})[0]; if(!h)return;
-   h.statut=statut; persist(); render();
+   var label=statut==='accepte'?'accepté':statut==='refuse'?'refusé':'envoyé';
+   B.askConfirm('Marquer ce devis comme '+label+' ?',function(){
+    h.statut=statut; persist(); render();
+   });
  },
  deleteDevisHistory:function(id){
    B.askConfirm('Supprimer cette entrée de l\'historique des devis ? Cette action est irréversible.',function(){
