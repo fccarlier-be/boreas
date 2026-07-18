@@ -990,10 +990,13 @@ function viewDashboard(){
 /* Génère les lignes de facturation d'un chantier (libellé + montant) */
 function ligneRows(lignes){
  if(!lignes.length)return '<p class="muted2" style="font-size:11px">Aucune ligne. Montant total à saisir manuellement ci-dessous.</p>';
- return lignes.map(function(l){
+ return '<div class="row" style="margin-bottom:4px;padding:0 2px"><span class="muted2" style="flex:2;font-size:10px">Désignation</span><span class="muted2" style="width:44px;font-size:10px;text-align:center">Qté</span><span class="muted2" style="flex:1;font-size:10px;text-align:right">Prix unit.</span><span style="width:37px"></span></div>'
+ +lignes.map(function(l){
+  var qte=l.qte||1, prix=l.prix!=null?l.prix:(Number(l.montant)||0);
   return '<div class="row" style="margin-bottom:6px;align-items:center">'
    +'<input class="input" id="cl_lib_'+l.id+'" value="'+esc(l.libelle)+'" placeholder="Ex: Pompe de relevage condensats" style="flex:2" oninput="B.onLigneInput(\''+l.id+'\')"/>'
-   +'<input class="input" id="cl_mt_'+l.id+'" type="number" inputmode="decimal" value="'+esc(l.montant)+'" placeholder="0" style="flex:1;text-align:right" oninput="B.onLigneInput(\''+l.id+'\')"/>'
+   +'<input class="input" id="cl_qte_'+l.id+'" type="number" inputmode="numeric" min="1" step="1" value="'+esc(qte)+'" placeholder="1" style="width:44px;text-align:center;padding:12px 4px" oninput="B.onLigneInput(\''+l.id+'\')"/>'
+   +'<input class="input" id="cl_prix_'+l.id+'" type="number" inputmode="decimal" value="'+esc(prix)+'" placeholder="0" style="flex:1;text-align:right" oninput="B.onLigneInput(\''+l.id+'\')"/>'
    +'<button class="btn btn-ghost" style="padding:10px;color:var(--red)" onclick="B.removeLigne(\''+l.id+'\')">'+ico('trash',15)+'</button></div>';
  }).join('');
 }
@@ -1180,9 +1183,11 @@ function viewChantiers(){
 /* Génère les lignes d'articles matériel du devis (libellé + prix d'achat unitaire) */
 function matRows(mat){
  if(!mat.length)return '<p class="muted2" style="font-size:11px">Aucun article. Ajoute au moins une ligne de matériel.</p>';
- return mat.map(function(m){
+ return '<div class="row" style="margin-bottom:4px;padding:0 2px"><span class="muted2" style="flex:2;font-size:10px">Désignation</span><span class="muted2" style="width:44px;font-size:10px;text-align:center">Qté</span><span class="muted2" style="flex:1;font-size:10px;text-align:right">Prix unit.</span><span style="width:37px"></span></div>'
+ +mat.map(function(m){
   return '<div class="row" style="margin-bottom:6px;align-items:center">'
    +'<input class="input" id="dm_lib_'+m.id+'" value="'+esc(m.libelle)+'" placeholder="Ex: Unité intérieure" style="flex:2" oninput="B.calc()"/>'
+   +'<input class="input" id="dm_qte_'+m.id+'" type="number" inputmode="numeric" min="1" step="1" value="'+esc(m.qte||1)+'" placeholder="1" style="width:44px;text-align:center;padding:12px 4px" oninput="B.calc()"/>'
    +'<input class="input" id="dm_prix_'+m.id+'" type="number" inputmode="decimal" value="'+esc(m.prix)+'" placeholder="0" style="flex:1;text-align:right" oninput="B.calc()"/>'
    +'<button class="btn btn-ghost" style="padding:10px;color:var(--red)" onclick="B.removeDevisMat(\''+m.id+'\')">'+ico('trash',15)+'</button></div>';
  }).join('');
@@ -1503,7 +1508,7 @@ var B={
  editChantier:function(id){
    var c=state.chantiers.filter(function(x){return x.id===id;})[0]; if(!c)return;
    ui.editingChantierId=id; ui.cStatut=c.statut||'en_cours'; ui.chantierForm=true;
-   ui.chantierLignes=(c.lignes||[]).map(function(l){return {id:l.id,libelle:l.libelle,montant:l.montant};});
+   ui.chantierLignes=(c.lignes||[]).map(function(l){return {id:l.id,libelle:l.libelle,montant:l.montant,qte:l.qte||1,prix:l.prix!=null?l.prix:l.montant};});
    render();
    renderChantierPhotos();
    var el=$('view'); if(el)el.scrollIntoView&&window.scrollTo(0,0);
@@ -1518,12 +1523,15 @@ var B={
     else { mEl.removeAttribute('readonly'); mEl.style.opacity=''; }
    }
  },
- addLigne:function(){ ui.chantierLignes.push({id:uid(),libelle:'',montant:0}); B.refreshLignesUI(); },
+ addLigne:function(){ ui.chantierLignes.push({id:uid(),libelle:'',qte:1,prix:0,montant:0}); B.refreshLignesUI(); },
  removeLigne:function(id){ ui.chantierLignes=ui.chantierLignes.filter(function(l){return l.id!==id;}); B.refreshLignesUI(); },
  onLigneInput:function(id){
    var l=ui.chantierLignes.filter(function(x){return x.id===id;})[0]; if(!l)return;
-   var libEl=$('cl_lib_'+id), mtEl=$('cl_mt_'+id);
-   l.libelle=libEl?libEl.value:''; l.montant=mtEl?(Number(mtEl.value)||0):0;
+   var libEl=$('cl_lib_'+id), qteEl=$('cl_qte_'+id), prixEl=$('cl_prix_'+id);
+   l.libelle=libEl?libEl.value:'';
+   l.qte=qteEl?Math.max(1,Math.round(Number(qteEl.value)||1)):1;
+   l.prix=prixEl?(Number(prixEl.value)||0):0;
+   l.montant=round2(l.qte*l.prix);
    var mEl=$('c_montant'); if(mEl&&ui.chantierLignes.length)mEl.value=ligneSum(ui.chantierLignes);
  },
  addChantier:function(){
@@ -1531,7 +1539,7 @@ var B={
    var montant=ui.chantierLignes.length?ligneSum(ui.chantierLignes):Number($('c_montant').value);
    if(!client||!montant){alert('Nom du client et montant requis.');return;}
    var desc=$('c_desc').value.trim(), date=($('c_date')&&$('c_date').value)||todayISO();
-   var lignes=ui.chantierLignes.length?ui.chantierLignes.map(function(l){return {id:l.id,libelle:l.libelle,montant:Number(l.montant)||0};}):[];
+   var lignes=ui.chantierLignes.length?ui.chantierLignes.map(function(l){return {id:l.id,libelle:l.libelle,montant:Number(l.montant)||0,qte:l.qte||1,prix:Number(l.prix)||0};}):[];
    var peppol=($('c_peppol')||{}).value?$('c_peppol').value.trim():'';
    var peekClient=findClientByName(client);   // lecture seule : on ne crée rien tant que la validation n'est pas passée
    var needsPeppol=(ui.cStatut==='facture'||ui.cStatut==='paye')&&peekClient&&peekClient.typeClient==='entreprise'&&!peppol;
@@ -1963,11 +1971,11 @@ var B={
  devisVals:function(){
    var matIds=(state.devis.materiel||[]).map(function(m){return m.id;});
    var materiel=matIds.map(function(id){
-     var libEl=$('dm_lib_'+id), prixEl=$('dm_prix_'+id);
-     return {id:id, libelle:libEl?libEl.value:'', prix:prixEl?(Number(prixEl.value)||0):0};
+     var libEl=$('dm_lib_'+id), qteEl=$('dm_qte_'+id), prixEl=$('dm_prix_'+id);
+     return {id:id, libelle:libEl?libEl.value:'', qte:qteEl?(Math.max(1,Math.round(Number(qteEl.value)||1))):1, prix:prixEl?(Number(prixEl.value)||0):0};
    });
    var coeff=Number(($('d_coeff')||{}).value)||0;
-   var matTotal=round2(materiel.reduce(function(s,m){return s+m.prix*coeff;},0));
+   var matTotal=round2(materiel.reduce(function(s,m){return s+m.prix*m.qte*coeff;},0));
    return{
      materiel:materiel, coeff:coeff, matTotal:matTotal,
      heures:Number(($('d_heures')||{}).value)||0,
@@ -1997,7 +2005,7 @@ var B={
  },
  addDevisMat:function(){
    B.saveDevis();
-   state.devis.materiel.push({id:uid(),libelle:'',prix:0});
+   state.devis.materiel.push({id:uid(),libelle:'',prix:0,qte:1});
    persist();
    var box=$('d_mat'); if(box)box.innerHTML=matRows(state.devis.materiel);
    B.calc();
@@ -2014,7 +2022,7 @@ var B={
    var client=($('d_client')||{}).value||'';
    var comp=(state.settings.companyName||'').trim();
    var items=v.materiel.filter(function(m){return m.libelle||m.prix;});
-   var matLines=items.map(function(m){ return '- '+(m.libelle||'Article')+' : '+fmt2(m.prix*v.coeff); }).join('\n');
+   var matLines=items.map(function(m){ return '- '+(m.libelle||'Article')+(m.qte>1?' (x'+m.qte+')':'')+' : '+fmt2(m.prix*m.qte*v.coeff); }).join('\n');
    return (comp?comp+'\n':'')+'Devis'+(client?' - '+client:'')+'\n\n'
      +(matLines?matLines+'\n':'')
      +'- Main-d\'oeuvre : '+fmt2(mo)+'\n'
@@ -2038,7 +2046,7 @@ var B={
    if(items.length){
     L.push({t:'MATÉRIEL',size:9,bold:true,color:PDFC.muted,gap:16});
     items.forEach(function(m,i){
-     L.push({type:'itemrow',left:(m.libelle||'Article'),right:euroPDF(m.prix*v.coeff),size:11,shaded:i%2===1,gap:i===0?6:0,valueX:420});
+     L.push({type:'itemrow',left:(m.libelle||'Article')+(m.qte>1?' (x'+m.qte+')':''),right:euroPDF(m.prix*m.qte*v.coeff),size:11,shaded:i%2===1,gap:i===0?6:0,valueX:420});
     });
    }
    L.push({type:'rule',gap:items.length?14:14});
@@ -2123,10 +2131,10 @@ var B={
    var clientId=B.resolveClientId('d',client);
    var lignes=[];
    v.materiel.filter(function(m){return m.libelle||m.prix;}).forEach(function(m){
-    lignes.push({id:uid(),libelle:m.libelle||'Article',montant:Math.round(m.prix*v.coeff*100)/100});
+    lignes.push({id:uid(),libelle:(m.libelle||'Article')+(m.qte>1?' (x'+m.qte+')':''),montant:Math.round(m.prix*m.qte*v.coeff*100)/100,qte:m.qte||1,prix:round2(m.prix*v.coeff)});
    });
-   if(mo>0)lignes.push({id:uid(),libelle:'Main-d\'œuvre',montant:Math.round(mo*100)/100});
-   if(v.depl>0)lignes.push({id:uid(),libelle:'Déplacement',montant:Math.round(v.depl*100)/100});
+   if(mo>0)lignes.push({id:uid(),libelle:'Main-d\'œuvre',montant:Math.round(mo*100)/100,qte:1,prix:Math.round(mo*100)/100});
+   if(v.depl>0)lignes.push({id:uid(),libelle:'Déplacement',montant:Math.round(v.depl*100)/100,qte:1,prix:Math.round(v.depl*100)/100});
    state.chantiers.unshift({id:uid(),client:client,clientId:clientId,description:'Converti depuis un devis',montant:total,lignes:lignes,statut:'en_cours',date:todayISO()});
    // Si ce devis avait déjà été envoyé (a un historique), on le marque "Accepté" — la conversion en chantier en est la preuve
    for(var hi=0;hi<state.devisHistory.length;hi++)if(state.devisHistory[hi].id===state.devis.id){state.devisHistory[hi].statut='accepte';break;}
@@ -2142,7 +2150,7 @@ var B={
    var h=state.devisHistory.filter(function(x){return x.id===id;})[0]; if(!h)return;
    state.devis={
     id:h.id,
-    materiel:(h.materiel||[]).map(function(m){return {id:m.id||uid(),libelle:m.libelle,prix:m.prix};}),
+    materiel:(h.materiel||[]).map(function(m){return {id:m.id||uid(),libelle:m.libelle,prix:m.prix,qte:m.qte||1};}),
     coeff:h.coeff,heures:h.heures,tarif:h.tarif,deplacement:h.deplacement,
     client:h.client||'',clientId:h.clientId||'',email:h.email||''
    };
