@@ -395,6 +395,7 @@ function driveEnsureFolder(token,cb){
 var pendingBlob=null;                     // ticket capturé mais frais pas encore enregistré
 var currentReceipt=null;                  // id du ticket ouvert dans la modale
 var pendingConfirm=null;                  // callback en attente de la modale de confirmation
+var pendingCancel=null;                   // callback optionnel si l'utilisateur annule (ex: revenir à la galerie)
 var currentCPhoto=null;                   // id de la photo de chantier ouverte dans la modale
 /* Galerie plein écran swipeable (photos de chantier ou de frais) */
 var galleryCtx=null;                      // 'chantier' | 'frais'
@@ -1668,11 +1669,13 @@ var B={
  },
  delChantierPhoto:function(id){
    var c=chantierById(ui.editingChantierId); if(!c)return;
-   idbDelC(id,function(){
-     c.photos=(c.photos||[]).filter(function(p){return p!==id;});
-     if(cphotoUrls[id]){URL.revokeObjectURL(cphotoUrls[id]); delete cphotoUrls[id];}
-     persist(); renderChantierPhotos();
-     if(currentCPhoto===id)B.closeModal();
+   B.askConfirm('Supprimer cette photo ? Cette action est irréversible.',function(){
+    idbDelC(id,function(){
+      c.photos=(c.photos||[]).filter(function(p){return p!==id;});
+      if(cphotoUrls[id]){URL.revokeObjectURL(cphotoUrls[id]); delete cphotoUrls[id];}
+      persist(); renderChantierPhotos();
+      if(currentCPhoto===id)B.closeModal();
+    });
    });
  },
  openChantierGallery:function(chantierId,startId){
@@ -1791,12 +1794,14 @@ var B={
  delPending:function(){ pendingBlob=null; var box=$('frais_preview'); if(box)box.innerHTML=''; },
  delFraisPhoto:function(kind,id){
    var f=state.frais.filter(function(x){return x.id===ui.editingFraisId;})[0]; if(!f)return;
-   var cleanup=function(){ if(cphotoUrls[id]){URL.revokeObjectURL(cphotoUrls[id]);delete cphotoUrls[id];} renderFraisPreview(); if(currentCPhoto===id)B.closeModal(); };
-   if(kind==='legacy'){
-    idbDel(id,function(){ delete receiptIds[id]; delete receiptDrive[id]; cleanup(); });
-   } else {
-    idbDelC(id,function(){ f.photos=(f.photos||[]).filter(function(p){return p!==id;}); persist(); cleanup(); });
-   }
+   B.askConfirm('Supprimer cette photo ? Cette action est irréversible.',function(){
+    var cleanup=function(){ if(cphotoUrls[id]){URL.revokeObjectURL(cphotoUrls[id]);delete cphotoUrls[id];} renderFraisPreview(); if(currentCPhoto===id)B.closeModal(); };
+    if(kind==='legacy'){
+     idbDel(id,function(){ delete receiptIds[id]; delete receiptDrive[id]; cleanup(); });
+    } else {
+     idbDelC(id,function(){ f.photos=(f.photos||[]).filter(function(p){return p!==id;}); persist(); cleanup(); });
+    }
+   });
  },
  openFraisGallery:function(fraisId,startId){
    var f=state.frais.filter(function(x){return x.id===fraisId;})[0]; if(!f)return;
@@ -1870,33 +1875,35 @@ var B={
     (ou ferme la modale s'il n'en reste plus). */
  deleteGalleryItem:function(){
    var it=galleryItems[galleryIndex]; if(!it)return;
-   var advance=function(){
-    galleryItems.splice(galleryIndex,1);
-    if(cphotoUrls[it.id]){URL.revokeObjectURL(cphotoUrls[it.id]); delete cphotoUrls[it.id];}
-    if(!galleryItems.length){ B.closeModal(); return; }
-    if(galleryIndex>=galleryItems.length)galleryIndex=galleryItems.length-1;
-    B.buildGalleryShell();
-   };
-   if(it.kind==='legacy'){
-    idbDel(it.id,function(){
-     delete receiptIds[it.id]; delete receiptDrive[it.id];
-     if(galleryCtx==='frais')renderFraisPreview();
-     advance();
-    });
-   } else {
-    idbDelC(it.id,function(){
-     if(galleryCtx==='chantier'){
-      var c=chantierById(galleryParentId);
-      if(c){ c.photos=(c.photos||[]).filter(function(p){return p!==it.id;}); persist(); }
-      renderChantierPhotos();
-     } else if(galleryCtx==='frais'){
-      var f=state.frais.filter(function(x){return x.id===galleryParentId;})[0];
-      if(f){ f.photos=(f.photos||[]).filter(function(p){return p!==it.id;}); persist(); }
-      renderFraisPreview();
-     }
-     advance();
+   B.askConfirm('Supprimer cette photo ? Cette action est irréversible.',function(){
+    var advance=function(){
+     galleryItems.splice(galleryIndex,1);
+     if(cphotoUrls[it.id]){URL.revokeObjectURL(cphotoUrls[it.id]); delete cphotoUrls[it.id];}
+     if(!galleryItems.length){ B.closeModal(); return; }
+     if(galleryIndex>=galleryItems.length)galleryIndex=galleryItems.length-1;
+     B.buildGalleryShell();
+    };
+    if(it.kind==='legacy'){
+     idbDel(it.id,function(){
+      delete receiptIds[it.id]; delete receiptDrive[it.id];
+      if(galleryCtx==='frais')renderFraisPreview();
+      advance();
+     });
+    } else {
+     idbDelC(it.id,function(){
+      if(galleryCtx==='chantier'){
+       var c=chantierById(galleryParentId);
+       if(c){ c.photos=(c.photos||[]).filter(function(p){return p!==it.id;}); persist(); }
+       renderChantierPhotos();
+      } else if(galleryCtx==='frais'){
+       var f=state.frais.filter(function(x){return x.id===galleryParentId;})[0];
+       if(f){ f.photos=(f.photos||[]).filter(function(p){return p!==it.id;}); persist(); }
+       renderFraisPreview();
+      }
+      advance();
     });
    }
+   },function(){ B.buildGalleryShell(); });
  },
  driveBtnHTML:function(id){
    var d=receiptDrive[id];
@@ -1904,19 +1911,23 @@ var B={
    return '<button class="btn btn-ghost" style="flex:1" onclick="B.driveUpload(\''+id+'\')">'+ico('cloud',18,'var(--cyan)')+'Envoyer vers Drive</button>';
  },
  refreshModalDrive:function(id){ var el=$('modalDrive'); if(el)el.innerHTML=B.driveBtnHTML(id); },
- closeModal:function(){ currentReceipt=null; currentCPhoto=null; pendingConfirm=null; var m=$('modal'); m.className=''; m.innerHTML=''; },
+ closeModal:function(){ currentReceipt=null; currentCPhoto=null; pendingConfirm=null; pendingCancel=null; var m=$('modal'); m.className=''; m.innerHTML=''; },
  /* Confirmation intégrée à l'app pour les actions irréversibles — window.confirm() s'est révélé
     peu fiable dans le contexte PWA iOS (écran d'accueil), donc on ne l'utilise plus nulle part. */
- askConfirm:function(message,onYes){
-   pendingConfirm=onYes;
+ askConfirm:function(message,onYes,onCancel){
+   pendingConfirm=onYes; pendingCancel=onCancel||null;
    var m=$('modal'); m.className='modal';
    m.innerHTML='<div class="imgwrap" style="align-items:center;justify-content:center;padding:28px 24px">'
     +'<p style="text-align:center;font-size:15px;line-height:1.5">'+esc(message)+'</p></div>'
-    +'<div class="modalbar"><button class="btn btn-ghost" style="flex:1" onclick="B.closeModal()">Annuler</button>'
+    +'<div class="modalbar"><button class="btn btn-ghost" style="flex:1" onclick="B.confirmCancel()">Annuler</button>'
     +'<button class="btn btn-ghost" style="flex:1;color:var(--red);font-weight:700" onclick="B.confirmYes()">Confirmer</button></div>';
  },
+ confirmCancel:function(){
+   var cb=pendingCancel; pendingConfirm=null; pendingCancel=null;
+   if(cb)cb(); else B.closeModal();
+ },
  confirmYes:function(){
-   var cb=pendingConfirm; pendingConfirm=null;
+   var cb=pendingConfirm; pendingConfirm=null; pendingCancel=null;
    var m=$('modal'); m.className=''; m.innerHTML='';
    if(cb)cb();
  },
