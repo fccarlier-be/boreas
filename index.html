@@ -279,6 +279,12 @@ function autoPurgeTrash(){
   else keepCl.push(c);
  });
  state.clients=keepCl;
+ var keepDv=[];
+ (state.devisHistory||[]).forEach(function(h){
+  if(h.deletedAt&&h.deletedAt<cutoff){ changed=true; }
+  else keepDv.push(h);
+ });
+ state.devisHistory=keepDv;
  if(changed)persist(true);
 }
 function clientStats(id){
@@ -1202,7 +1208,7 @@ function devisStatutChip(statut){
  return '<span class="chip" style="'+style+'">'+label+'</span>';
 }
 function devisHistoryRowsHTML(){
- var list=state.devisHistory.slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
+ var list=state.devisHistory.filter(function(h){return !h.deletedAt;}).slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
  if(!list.length)return '<p class="muted2" style="text-align:center;font-size:13px;padding:20px 0">Aucun devis envoyé pour l\'instant. Ça se remplit automatiquement à chaque partage de PDF.</p>';
  return list.map(function(h){
   return '<div class="card pop mb2" style="padding:12px">'
@@ -1220,7 +1226,7 @@ function devisHistoryRowsHTML(){
 }
 function viewDevis(){
  var d=state.devis, mat=d.materiel||[];
- var hist=state.devisHistory||[];
+ var hist=(state.devisHistory||[]).filter(function(h){return !h.deletedAt;});
  var nAccepte=hist.filter(function(h){return h.statut==='accepte';}).length;
  var nRefuse=hist.filter(function(h){return h.statut==='refuse';}).length;
  var nTranche=nAccepte+nRefuse;
@@ -1317,7 +1323,8 @@ function daysLeft(deletedAt){ return Math.max(0,30-Math.floor((Date.now()-delete
 function trashCount(){
  return state.chantiers.filter(function(c){return c.deletedAt;}).length
   +state.frais.filter(function(f){return f.deletedAt;}).length
-  +state.clients.filter(function(c){return c.deletedAt;}).length;
+  +state.clients.filter(function(c){return c.deletedAt;}).length
+  +(state.devisHistory||[]).filter(function(h){return h.deletedAt;}).length;
 }
 function trashRow(label,sub,deletedAt,restoreFn,purgeFn){
  return '<div class="card pop mb2" style="padding:12px"><div class="between" style="align-items:flex-start">'
@@ -1332,7 +1339,8 @@ function viewTrash(){
  var ch=state.chantiers.filter(function(c){return c.deletedAt;}).sort(function(a,b){return b.deletedAt-a.deletedAt;});
  var fr=state.frais.filter(function(f){return f.deletedAt;}).sort(function(a,b){return b.deletedAt-a.deletedAt;});
  var cl=state.clients.filter(function(c){return c.deletedAt;}).sort(function(a,b){return b.deletedAt-a.deletedAt;});
- var total=ch.length+fr.length+cl.length;
+ var dv=(state.devisHistory||[]).filter(function(h){return h.deletedAt;}).sort(function(a,b){return b.deletedAt-a.deletedAt;});
+ var total=ch.length+fr.length+cl.length+dv.length;
  var body='';
  if(!total){
   body='<p class="muted2" style="text-align:center;font-size:14px;padding:32px 0">La corbeille est vide.</p>';
@@ -1348,6 +1356,10 @@ function viewTrash(){
   if(cl.length){
    body+='<div class="mb2" style="font-weight:600;font-size:14px;margin-top:8px">Clients</div>'
     +cl.map(function(c){return trashRow(c.nom,'',c.deletedAt,"B.restoreClient('"+c.id+"')","B.purgeClient('"+c.id+"')");}).join('');
+  }
+  if(dv.length){
+   body+='<div class="mb2" style="font-weight:600;font-size:14px;margin-top:8px">Devis</div>'
+    +dv.map(function(h){return trashRow(h.client,fmt(h.total),h.deletedAt,"B.restoreDevisHistory('"+h.id+"')","B.purgeDevisHistory('"+h.id+"')");}).join('');
   }
  }
  return '<div class="row mb1" style="align-items:center;gap:10px"><button class="btn btn-ghost" style="padding:9px" onclick="B.setTab(\'settings\')">'+ico('back',18)+'</button><h1>Corbeille</h1></div>'
@@ -2176,7 +2188,18 @@ var B={
    });
  },
  deleteDevisHistory:function(id){
-   B.askConfirm('Supprimer cette entrée de l\'historique des devis ? Cette action est irréversible.',function(){
+   var h=state.devisHistory.filter(function(x){return x.id===id;})[0]; if(!h)return;
+   h.deletedAt=Date.now();
+   persist(); render();
+   toast('Devis déplacé dans la corbeille (récupérable 30 jours).');
+ },
+ restoreDevisHistory:function(id){
+   var h=state.devisHistory.filter(function(x){return x.id===id;})[0]; if(!h)return;
+   delete h.deletedAt; persist(); render();
+   toast('Devis restauré.');
+ },
+ purgeDevisHistory:function(id){
+   B.askConfirm('Supprimer définitivement cette entrée de l\'historique des devis ? Cette action est irréversible.',function(){
     state.devisHistory=state.devisHistory.filter(function(x){return x.id!==id;});
     persist(); render();
    });
@@ -2308,11 +2331,12 @@ var B={
      var ch=i.chantierId?chantierById(i.chantierId):null;
      L.push([i.date,q(i.libelle),q(i.categorie),round2(i.montant),pd,round2((Number(i.montant)||0)*pd/100),q(ch?ch.client:'')].join(sep));
    });
-   if((state.devisHistory||[]).length){
+   var devisActifs=(state.devisHistory||[]).filter(function(h){return !h.deletedAt;});
+   if(devisActifs.length){
     L.push('');
     L.push('DEVIS');
     L.push(['Date','Client','Montant','Statut'].join(sep));
-    state.devisHistory.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(h){
+    devisActifs.slice().sort(function(a,b){return(a.date||'').localeCompare(b.date||'');}).forEach(function(h){
       L.push([h.date,q(h.client),round2(h.total),h.statut==='accepte'?'Accepte':h.statut==='refuse'?'Refuse':'Envoye'].join(sep));
     });
    }
